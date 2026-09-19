@@ -4,7 +4,7 @@ import type { Db } from './db/open';
 import { BUCKETS, isCategory, isKind, type Kind } from './classify/categories';
 import { classifyAll } from './classify/run';
 import { DecisionError, validateShape } from './decisions';
-import { addDays, isoFromDmy } from './core/dates';
+import { addDays, isoFromDmy, sgtDate } from './core/dates';
 import { redact } from './core/redact';
 import { getTransaction, type TransactionView } from './queries/transactions';
 import { loadSettings } from './settings';
@@ -37,7 +37,7 @@ function validDate(iso: string): boolean {
   return !!m && isoFromDmy(`${m[3]}/${m[2]}/${m[1]}`) === iso;
 }
 
-export function addManualEntry(db: Db, paths: Paths, e: ManualEntry, today = new Date().toISOString().slice(0, 10)): TransactionView {
+export function addManualEntry(db: Db, paths: Paths, e: ManualEntry, today = sgtDate(new Date().toISOString())): TransactionView {
   if (typeof e.date !== 'string' || !validDate(e.date)) throw new ManualEntryError('Give the date as YYYY-MM-DD.');
   if (e.date < '2000-01-01' || e.date > addDays(today, 31)) throw new ManualEntryError('That date is too far from today. Check the year.');
   if (typeof e.payee !== 'string') throw new ManualEntryError('Say who was paid.');

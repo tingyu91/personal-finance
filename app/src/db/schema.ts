@@ -112,4 +112,25 @@ export const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
+
+  // 3 — the home project and its vendors (PRD §7.2)
+  `
+  CREATE TABLE projects (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    start_month TEXT,                    -- YYYY-MM; NULL follows the first month with statements
+    end_month TEXT,                      -- open until set
+    budget_cents INTEGER,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE vendors (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    match TEXT NOT NULL,                 -- case-insensitive text on the payee or statement line
+    contract_cents INTEGER,
+    note TEXT
+  );
+  `,
 ];

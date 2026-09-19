@@ -1,5 +1,5 @@
 import type { Db } from '../db/open';
-import { addMonths, monthEnd } from '../core/dates';
+import { addMonths, monthEnd, sgtDate } from '../core/dates';
 
 /**
  * A row counts towards totals when it is in SGD and either a manual entry or from a statement
@@ -25,7 +25,7 @@ export function monthRange(from: string, to: string): string[] {
  * most a year before the first statement and never past the current month, so one old or
  * mistyped date cannot add dozens of empty months.
  */
-export function dataMonths(db: Db, today = new Date().toISOString().slice(0, 10)): string[] {
+export function dataMonths(db: Db, today = sgtDate(new Date().toISOString())): string[] {
   const s = db.prepare('SELECT MIN(month) lo, MAX(month) hi FROM statements').get() as { lo: string | null; hi: string | null };
   const now = today.slice(0, 7);
   const floor = s.lo ? addMonths(s.lo, -12) : addMonths(now, -12);

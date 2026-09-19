@@ -49,7 +49,8 @@ function RowEditor({ t, meta, onDone }: { t: TransactionView; meta: Meta; onDone
   const [always, setAlways] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const spending = ['spend', 'fee', 'tax'].includes(kind);
+  // Only spending takes a home project bucket (the server refuses one on fees, tax and the rest).
+  const spending = kind === 'spend';
   const categories = kind === 'income' ? meta.incomeCategories : meta.categories.map((c) => c.name);
 
   async function act(task: () => Promise<unknown>) {
@@ -235,7 +236,14 @@ function ManualForm({ meta, accounts, onDone }: { meta: Meta; accounts: { id: nu
       <div className="field-row">
         <label className="field">
           <span className="ty-label">Kind</span>
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+          <select
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value);
+              setCategory(e.target.value === 'income' ? meta.incomeCategories[0] ?? '' : 'Other');
+              if (e.target.value !== 'spend') setBucket('');
+            }}
+          >
             {meta.kinds
               .filter((k) => k !== 'unclassified')
               .map((k) => (
@@ -514,8 +522,22 @@ export function Transactions() {
               .join(' · ');
             return (
               <div key={t.fingerprint} className={`ledger-item${open ? ' is-open' : ''}`} role="listitem">
+                <span className="ledger-check">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${t.payee}`}
+                    checked={selected.has(t.fingerprint)}
+                    onChange={(e) => {
+                      const next = new Set(selected);
+                      if (e.target.checked) next.add(t.fingerprint);
+                      else next.delete(t.fingerprint);
+                      setSelected(next);
+                    }}
+                  />
+                </span>
                 <div
                   className="ty-txn"
+                  role="button"
                   tabIndex={0}
                   aria-label={`${shortDate(t.date)}, ${t.payee}, ${formatSGD(t.amountCents)}${t.amountCents < 0 ? ' out' : ' in'}. Open to sort it.`}
                   aria-expanded={open}
@@ -528,19 +550,6 @@ export function Transactions() {
                     }
                   }}
                 >
-                  <span onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${t.payee}`}
-                      checked={selected.has(t.fingerprint)}
-                      onChange={(e) => {
-                        const next = new Set(selected);
-                        if (e.target.checked) next.add(t.fingerprint);
-                        else next.delete(t.fingerprint);
-                        setSelected(next);
-                      }}
-                    />
-                  </span>
                   <span className="ty-txn-date">
                     {shortDate(t.date)}
                   </span>

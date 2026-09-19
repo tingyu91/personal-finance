@@ -1,11 +1,19 @@
 import type { OverviewData } from '../../src/reports/overview';
+import type { HomeData } from '../../src/reports/home';
 import type { CoverageRow } from '../../src/reports/coverage';
 import type { Ledger } from '../../src/reports/ledger';
 import type { FileView } from '../../src/reports/statements';
 import type { TransactionView } from '../../src/queries/transactions';
 import type { ReceiptItem } from './ds';
 
-export type { OverviewData, CoverageRow, Ledger, FileView, TransactionView };
+export type { OverviewData, CoverageRow, Ledger, FileView, TransactionView, HomeData };
+
+export interface VendorInput {
+  name?: string;
+  match?: string;
+  contractCents?: number | null;
+  note?: string | null;
+}
 
 export interface Meta {
   categories: { name: string; slot: number }[];
@@ -118,6 +126,23 @@ export const api = {
   deleteManual: (fingerprint: string) => call<{ ok: true }>(`/api/transactions/${encodeURIComponent(fingerprint)}`, { method: 'DELETE' }),
   acceptStatement: (id: number) => call<{ ok: true }>(`/api/statements/${id}/accept`, { method: 'POST' }),
   removeFile: (id: number) => call<{ ok: true }>(`/api/files/${id}`, { method: 'DELETE' }),
+  home: () => call<HomeData>('/api/home'),
+  updateHome: (patch: { startMonth?: string; endMonth?: string | null; budgetCents?: number | null }) => call<{ project: HomeData['project'] }>('/api/home/project', json('PATCH', patch)),
+  addVendor: (v: VendorInput) => call<{ id: number }>('/api/home/vendors', json('POST', v)),
+  updateVendor: (id: number, v: VendorInput) => call<{ ok: true }>(`/api/home/vendors/${id}`, json('PATCH', v)),
+  deleteVendor: (id: number) => call<{ ok: true }>(`/api/home/vendors/${id}`, { method: 'DELETE' }),
+  /** The CSV bytes, its file name, and whether a copy was saved to outputs/exports. */
+  exportHome: async (): Promise<{ blob: Blob; name: string; saved: boolean }> => {
+    let res: Response;
+    try {
+      res = await fetch('/api/home/export.csv', { method: 'POST' });
+    } catch {
+      throw new ApiError('Tally’s local server is not answering. Start it with npm start.');
+    }
+    if (!res.ok) throw new ApiError(`Tally could not export (${res.status}).`);
+    const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'home-project.csv';
+    return { blob: await res.blob(), name, saved: res.headers.get('x-tally-saved') === 'yes' };
+  },
 };
 
 export type Api = typeof api;

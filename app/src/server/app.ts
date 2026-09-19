@@ -8,6 +8,7 @@ import { rebuildFromVault } from '../import/rebuild';
 import { clearDecision, DecisionError, deleteRule, listRules, listSeedRules, setDecision, setDecisions, type DecisionPatch } from '../decisions';
 import { getTransaction } from '../queries/transactions';
 import { registerScreenRoutes } from './screens';
+import { registerHomeRoutes } from './home';
 
 /** A JSON object body, or {} for anything else (null, arrays, malformed JSON). */
 async function readObject(req: Request): Promise<Record<string, unknown>> {
@@ -150,6 +151,7 @@ export function createApp(ctx: AppContext): Hono {
   api.post('/rebuild', async (c) => c.json(await serial(() => rebuildFromVault(db(), ctx.paths, ctx.importDeps))));
 
   registerScreenRoutes(api, ctx.paths, db, serial);
+  registerHomeRoutes(api, ctx.paths, db, serial);
 
   api.all('*', (c) => c.json({ error: 'Not found' }, 404));
   app.route('/api', api);

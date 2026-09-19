@@ -1,0 +1,48 @@
+{
+  "uobOne": {
+    "minCardSpendCents": 50000,
+    "minSalaryCents": 160000,
+    "giroDebitsInstead": 3,
+    "salaryTiers": [
+      { "uptoCents": 7500000, "ratePct": 1.0 },
+      { "uptoCents": 12500000, "ratePct": 2.5 },
+      { "uptoCents": 15000000, "ratePct": 3.4 },
+      { "uptoCents": null, "ratePct": 0.05 }
+    ],
+    "giroTiers": [
+      { "uptoCents": 7500000, "ratePct": 1.0 },
+      { "uptoCents": 12500000, "ratePct": 2.0 },
+      { "uptoCents": null, "ratePct": 0.05 }
+    ],
+    "baseRatePct": 0.05,
+    "checked_on": "2026-09-19",
+    "source": "UOB One Account page as quoted by growbeansprout.com (8 Sep 2026); uob.com.sg did not load when checked"
+  },
+  "srs": {
+    "capCitizenCents": 1530000,
+    "capForeignerCents": 3570000,
+    "deadline": "12-31",
+    "checked_on": "2026-09-19",
+    "source": "iras.gov.sg, SRS contributions and tax relief"
+  },
+  "cpfTopUp": {
+    "selfCapCents": 800000,
+    "familyCapCents": 800000,
+    "deadline": "12-31",
+    "checked_on": "2026-09-19",
+    "source": "iras.gov.sg, CPF Cash Top-up Relief"
+  },
+  "thresholds": {
+    "unseenActCentsPerMonth": 50000,
+    "duplicateDays": 14,
+    "duplicateMinCents": 5000,
+    "spikeRatio": 1.5,
+    "subscriptionMonths": 3,
+    "subscriptionAmountTolerancePct": 10,
+    "staleDays": 35,
+    "largeUnsortedCents": 50000,
+    "outsideFactsStaleDays": 180,
+    "checked_on": "2026-09-19",
+    "source": "PRD §7.5 and Tally defaults"
+  }
+}

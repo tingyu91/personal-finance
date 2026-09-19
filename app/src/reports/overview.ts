@@ -106,7 +106,10 @@ function partialCoverage(db: Db, cov: ReturnType<typeof coverage>, month: string
   for (const r of cov.rows) {
     if (r.seenOnly || r.accountId === null || r.cells[mi] !== 'ok') continue;
     const adapter = adapterOf.get(r.accountId);
-    const through = byAccount.get(r.accountId) ?? (adapter ? byAdapter.get(adapter) : undefined);
+    // A card with no activity is left off the combined file, so the file's own period counts too.
+    const own = byAccount.get(r.accountId);
+    const shared = r.kind === 'card' && adapter ? byAdapter.get(adapter) : undefined;
+    const through = [own, shared].filter((d): d is string => !!d).sort().at(-1);
     if (through && through < to) out.push({ account: r.account, through });
   }
   return out;
@@ -154,17 +157,18 @@ export function overview(db: Db, month: string): OverviewData {
     unseenCents += unseen;
     if (r.seenOnly ? unseen > 0 : cell === 'missing') missing.push(r.account);
   }
-  // Statements are matched to the month by period, not by label: a card statement for August
-  // (21 July to 20 August) holds late-July rows too.
+  // Held rows are found by their own dates: a card statement for August holds late-July rows,
+  // and a purchase can post into the next statement.
   const held = [
     ...new Set(
       (
         db
           .prepare(
-            `SELECT a.bank, a.product, a.last4, a.label FROM statements s JOIN accounts a ON a.id = s.account_id
-             WHERE s.period_start <= ? AND s.period_end >= ? AND s.reconciled = 0 AND s.accepted = 0`,
+            `SELECT DISTINCT a.bank, a.product, a.last4, a.label FROM transactions t
+             JOIN statements s ON s.id = t.statement_id JOIN accounts a ON a.id = s.account_id
+             WHERE t.date BETWEEN ? AND ? AND s.reconciled = 0 AND s.accepted = 0`,
           )
-          .all(to, from) as { bank: string; product: string; last4: string; label: string | null }[]
+          .all(from, to) as { bank: string; product: string; last4: string; label: string | null }[]
       ).map((a) => accountLabel(a)),
     ),
   ];

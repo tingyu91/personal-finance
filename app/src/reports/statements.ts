@@ -104,8 +104,11 @@ export function acceptStatement(db: Db, paths: Paths, statementId: number): bool
 export function removeFile(db: Db, paths: Paths, fileId: number): boolean {
   const f = db.prepare('SELECT vault_path FROM files WHERE id = ?').get(fileId) as { vault_path: string } | undefined;
   if (!f) return false;
+  const settings = loadSettings(paths);
   db.transaction(() => {
     db.prepare('DELETE FROM files WHERE id = ?').run(fileId);
+    // Sort again first, so pairs that pointed at the removed rows' account are gone.
+    classifyAll(db, settings);
     // An account whose only statements were in this file: a card still repaid from your
     // accounts becomes one Tally only sees as a repayment target (its repayments are unseen
     // money again); anything else nothing points at goes.
@@ -119,8 +122,8 @@ export function removeFile(db: Db, paths: Paths, fileId: number): boolean {
          AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.account_id = accounts.id OR t.target_account_id = accounts.id)`,
     ).run();
   })();
+  // Only once the database has let go of the file.
   fs.rmSync(path.join(paths.vaultDir, f.vault_path), { force: true });
-  classifyAll(db, loadSettings(paths));
   return true;
 }
 

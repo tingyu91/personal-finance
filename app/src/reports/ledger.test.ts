@@ -88,6 +88,20 @@ describe('statements admin', () => {
   });
 });
 
+describe('removing a file', () => {
+  it('drops an account that only a stale transfer pair still pointed at', () => {
+    const savings = db.prepare("SELECT id FROM accounts WHERE kind = 'deposit' AND last4 = '9876'").get() as { id: number };
+    // Another account's row pairs with the savings account, as an own transfer would.
+    db.prepare("UPDATE transactions SET target_account_id = ? WHERE id = (SELECT id FROM transactions WHERE account_id <> ? AND account_id IS NOT NULL LIMIT 1)").run(
+      savings.id,
+      savings.id,
+    );
+    const file = listFiles(db).find((f) => f.statements.some((s) => s.accountId === savings.id))!;
+    removeFile(db, paths, file.id);
+    expect(db.prepare('SELECT COUNT(*) n FROM accounts WHERE id = ?').get(savings.id)).toEqual({ n: 0 });
+  });
+});
+
 describe('manual entries', () => {
   it('adds a cash payment that counts, survives a rebuild, and can be deleted', async () => {
     const view = addManualEntry(db, paths, { date: '2026-02-10', amountCents: -500_00, payee: 'Contractor deposit', kind: 'spend', category: 'Home project', bucket: 'renovation', note: 'Cash' });
