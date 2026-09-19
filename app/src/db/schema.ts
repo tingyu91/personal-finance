@@ -133,4 +133,13 @@ export const MIGRATIONS: string[] = [
     note TEXT
   );
   `,
+
+  // 4 — insights you dismissed (until NULL) or snoozed (until a date) (PRD §7.2)
+  `
+  CREATE TABLE dismissed_insights (
+    key TEXT PRIMARY KEY,
+    until TEXT,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];

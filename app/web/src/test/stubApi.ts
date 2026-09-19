@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { Api, HomeData } from '../api';
+import type { Api, HomeData, InsightItem } from '../api';
 
 /** An invented home project: EXAMPLE RENO, Sofa House, one row with no bucket. */
 export function homeData(over: Partial<HomeData> = {}): HomeData {
@@ -43,6 +43,44 @@ export function homeData(over: Partial<HomeData> = {}): HomeData {
     ],
     ...over,
   };
+}
+
+/** Invented insights, one per level. */
+export function insightItems(): InsightItem[] {
+  return [
+    {
+      key: 'unseen:2026-08',
+      rule: 1,
+      level: 'act',
+      title: 'S$1,318.27 went to cards and wallets Tally cannot see into',
+      detail: 'About S$1,318.27 a month. Card ·5566 S$1,318.27. Add their statements to see what it bought.',
+      fingerprints: ['fp1'],
+      action: { label: 'See where to get the statements', href: '#/statements' },
+    },
+    {
+      key: 'dup:a|b',
+      rule: 3,
+      level: 'watch',
+      title: 'Two payments of S$120.00 to Example Shop, 8 days apart',
+      detail: 'On 2026-05-02 and 2026-05-10. If only one was meant, the other is worth asking about.',
+      worthCents: 120_00,
+      worthLabel: 'Amount',
+      per: 'once',
+      fingerprints: ['a', 'b'],
+      action: { label: 'See both payments', href: '#/transactions?insight=dup%3Aa%7Cb' },
+    },
+    {
+      key: 'subs:x',
+      rule: 5,
+      level: 'info',
+      title: '2 regular monthly charges, about S$21.96 a month',
+      detail: 'Streamly S$17.98, Cloudbox S$3.98.',
+      worthCents: 263_52,
+      worthLabel: 'About',
+      per: 'a year',
+      fingerprints: ['c'],
+    },
+  ];
 }
 
 /** A stub API with invented data for screen tests. Override any method per test. */
@@ -100,6 +138,10 @@ export function stubApi(over: Partial<Record<keyof Api, unknown>> = {}): Api {
     updateVendor: vi.fn(async () => ({ ok: true })),
     deleteVendor: vi.fn(async () => ({ ok: true })),
     exportHome: vi.fn(async () => ({ blob: new Blob(['x']), name: 'home-project-2026-09-19.csv', saved: true })),
+    insights: vi.fn(async () => ({ insights: insightItems(), hidden: 0 })),
+    dismissInsight: vi.fn(async () => ({ ok: true })),
+    restoreInsights: vi.fn(async () => ({ restored: 1 })),
+    writeReview: vi.fn(async () => ({ file: 'outputs/reviews/review-2026-08.md' })),
   };
   return { ...base, ...over } as unknown as Api;
 }

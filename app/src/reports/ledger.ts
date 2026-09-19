@@ -9,6 +9,8 @@ export interface LedgerFilters {
   kind?: string;
   review?: boolean;
   q?: string;
+  /** Only these rows (an insight's evidence). An empty list matches nothing. */
+  fingerprints?: string[];
   limit?: number;
   offset?: number;
 }
@@ -46,6 +48,13 @@ export function listTransactions(db: Db, f: LedgerFilters): Ledger {
     args.push(f.kind);
   }
   if (f.review) where.push('t.needs_review = 1');
+  if (f.fingerprints) {
+    if (!f.fingerprints.length) where.push('0');
+    else {
+      where.push(`t.fingerprint IN (${f.fingerprints.map(() => '?').join(', ')})`);
+      args.push(...f.fingerprints);
+    }
+  }
   if (f.q?.trim()) {
     where.push('(t.payee LIKE ? OR t.raw LIKE ? OR t.note LIKE ?)');
     const like = `%${f.q.trim().replace(/[%_]/g, (c) => `\\${c}`)}%`;

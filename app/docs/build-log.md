@@ -144,3 +144,35 @@ Decisions taken while building:
   payments made by bank transfer wait in Review, and much more went to cards with no statements.
   Sorting the Review queue once and adding the missing card statements (Block 6) completes the answer.
 
+
+## Block 5 — Insights and the monthly review (2026-09-19)
+
+**Done-check:** met for rules 1, 2 and 4; rule 3 is quiet on the sample for a good reason (below).
+
+- All ten rules are pure functions over a snapshot of the data, each with fixture tests (25 tests).
+  Every threshold and outside figure lives in `data/rules/benchmarks.json` with the date it was
+  checked; rules on outside facts drop from Act to Watch when that date is over 180 days old.
+- On the sample (scratch copy), eight insights are live:
+  - Rule 1, Act: the money repaid to cards with no statements and topped up to wallets, with the
+    card list and all its rows.
+  - Rule 2, Act: the UOB One account paid no bonus interest in any month. UOB's own printed
+    eligible card spend was below the S$500 minimum UOB lists (checked 2026-09-19) while a salary
+    credit was present; the worth comes from the tier table on the account's average balance.
+  - Rule 4, Watch: card membership fees and telegraphic transfer charges, annualised.
+  - Rules 5 and 6 also fire (regular monthly charges; four categories above 1.5 times their median
+    in August).
+- Every insight opens its rows on Transactions (checked for each live insight).
+- The monthly review writes `outputs/reviews/review-YYYY-MM.md` from the Insights screen or
+  `npm run review -- 2026-08`.
+
+**Deviation: rule 3 does not fire on the two identical marketplace payments.** PRD §3.6 expected
+them to. The statements show both were refunded (one the same day, one 30 days later), so Tally
+pairs each with its refund and there is nothing left to chase. The rule is covered by its fixture
+tests. Recurring payments of the same amount to the same person (three or more) are a series,
+not duplicates, and are left out.
+
+Sources checked on 2026-09-19 for `rules/benchmarks.default.json`: IRAS (SRS cap S$15,300 for
+citizens and PRs; CPF cash top-up relief up to S$8,000 for yourself and S$8,000 for family). The UOB
+One page did not load, so its tiers come from a review site quoting it (growbeansprout.com,
+8 Sep 2026); the file says so. Check the UOB figures on uob.com.sg before relying on rule 2's
+estimate.

@@ -42,6 +42,9 @@
     "staleDays": 35,
     "largeUnsortedCents": 50000,
     "outsideFactsStaleDays": 180,
+    "bonusActWorthCentsPerYear": 10000,
+    "budgetWatchRatio": 0.8,
+    "duplicateSeriesCount": 3,
     "checked_on": "2026-09-19",
     "source": "PRD §7.5 and Tally defaults"
   }

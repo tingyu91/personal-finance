@@ -325,6 +325,7 @@ export function Transactions() {
       kind: p.get('kind') ?? '',
       review: p.get('review') === '1',
       q: p.get('q') ?? '',
+      insight: p.get('insight') ?? '',
     }),
     [p],
   );
@@ -339,7 +340,7 @@ export function Transactions() {
   const meta = useLoad((a) => a.meta(), []);
   const accounts = useLoad((a) => a.accounts(), []);
   const key = JSON.stringify(filters);
-  const ledger = useLoad((a) => a.transactions({ ...filters, limit }), [key, limit]);
+  const ledger = useLoad((a) => a.transactions({ ...filters, insight: filters.insight || undefined, limit }), [key, limit]);
 
   useEffect(() => {
     setSelected(new Set());
@@ -385,6 +386,14 @@ export function Transactions() {
       ) : null}
       {adding && m ? <ManualForm meta={m} accounts={accounts.data?.accounts ?? []} onDone={() => setAdding(false)} /> : null}
 
+      {filters.insight ? (
+        <p className="notice notice-watch" role="status">
+          {ledger.data?.insight ? <>Showing the rows behind “{ledger.data.insight.title}”. </> : ledger.error ? null : 'Loading the rows behind an insight. '}
+          <a className="ty-link" href={href('transactions')}>
+            Show all transactions
+          </a>
+        </p>
+      ) : null}
       <div className="filters" role="search">
         <label className="field">
           <span className="ty-label">Month</span>

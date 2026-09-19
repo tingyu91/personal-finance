@@ -11,6 +11,7 @@ import { dataMonths } from '../reports/months';
 import { overview } from '../reports/overview';
 import { acceptStatement, listFiles, removeFile, vaultFile } from '../reports/statements';
 import { loadSettings } from '../settings';
+import { insightFingerprints } from '../insights';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -73,8 +74,12 @@ export function registerScreenRoutes(api: Hono, paths: Paths, db: () => Db, seri
   api.get('/transactions', (c) => {
     const q = c.req.query();
     const accountId = q.account ? Number(q.account) : undefined;
-    return c.json(
-      listTransactions(db(), {
+    // An insight's rows: the evidence behind one finding (PRD §4.8).
+    const insight = q.insight ? insightFingerprints(db(), paths, q.insight) : undefined;
+    if (q.insight && !insight) return c.json({ error: 'That insight is not live any more.' }, 404);
+    return c.json({
+      ...listTransactions(db(), {
+        fingerprints: insight?.fingerprints,
         month: q.month && MONTH.test(q.month) ? q.month : undefined,
         accountId: Number.isInteger(accountId) ? accountId : undefined,
         category: q.category || undefined,
@@ -84,7 +89,8 @@ export function registerScreenRoutes(api: Hono, paths: Paths, db: () => Db, seri
         limit: count(q.limit),
         offset: count(q.offset),
       }),
-    );
+      insight: insight ? { key: q.insight, title: insight.title } : null,
+    });
   });
 
   api.get('/files', (c) => c.json({ files: listFiles(db()) }));
