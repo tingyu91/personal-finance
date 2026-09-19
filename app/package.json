@@ -1,0 +1,46 @@
+{
+  "name": "tally",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tally: a local app that reads bank and card e-statements. Personal, offline, 127.0.0.1 only.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "tokens": "tsx scripts/build-tokens.ts",
+    "dev": "npm run tokens && concurrently -k -n api,web \"tsx watch src/server/main.ts\" \"vite\"",
+    "build": "npm run tokens && vite build",
+    "start": "npm run build && tsx src/server/main.ts --static",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "import": "tsx src/cli/import.ts"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^20.19.43",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@fontsource/geist": "^5.3.0",
+    "@fontsource/geist-mono": "^5.3.0",
+    "@hono/node-server": "^1.19.17",
+    "better-sqlite3": "11.10.0",
+    "concurrently": "^9.2.4",
+    "hono": "^4.13.8",
+    "lucide-react": "^1.47.0",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsx": "^4.23.13"
+  }
+}
