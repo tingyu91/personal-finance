@@ -1,0 +1,24 @@
+# This repository is public. Personal data never enters git (Tally PRD §6).
+
+# Bank and card statements, and any PDF anywhere
+/DBS Statements/
+/UOB statements/
+*.pdf
+
+# The app's data (database, statement vault, settings), your inbox and generated reports
+/data/
+/inputs/
+/outputs/
+*.db
+*.db-journal
+
+# Hold real figures or names from the statements: kept on this computer only
+/prd/
+/CLAUDE.md
+/design-system/
+
+node_modules/
+dist/
+coverage/
+*.log
+.env*
