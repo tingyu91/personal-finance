@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { openDb } from './open';
 import { MIGRATIONS } from './schema';
 import { useTmpDirs } from '../../test/tmp';
@@ -42,6 +43,19 @@ describe('openDb', () => {
     db.prepare("INSERT INTO accounts (key, bank, product, kind, last4) VALUES ('card:1111:SGD', 'UOB', 'Preferred Visa', 'card', '1111')").run();
     db.close();
     expect(fs.existsSync(`${file}-wal`)).toBe(false);
+  });
+
+  it('upgrades a version-1 database in place', () => {
+    const file = tmpFile();
+    const v1 = new Database(file);
+    v1.exec(MIGRATIONS[0]!);
+    v1.pragma('user_version = 1');
+    v1.close();
+    const db = openDb(file);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
+    expect(tables).toEqual(expect.arrayContaining(['decisions', 'rules']));
+    db.close();
   });
 
   it('rejects an unknown account kind', () => {

@@ -83,4 +83,33 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX transactions_date ON transactions (date);
   CREATE INDEX transactions_kind ON transactions (kind);
   `,
+
+  // 2 — classify: your decisions (keyed by fingerprint, never row id) and rules (PRD §7.2)
+  `
+  CREATE TABLE decisions (
+    fingerprint TEXT PRIMARY KEY,
+    kind TEXT,
+    category TEXT,
+    bucket TEXT,
+    vendor TEXT,
+    note TEXT,
+    split_json TEXT,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE rules (
+    id INTEGER PRIMARY KEY,
+    source TEXT NOT NULL CHECK (source IN ('seed', 'user')),
+    priority INTEGER NOT NULL DEFAULT 0,
+    field TEXT NOT NULL CHECK (field IN ('payee', 'raw')),
+    pattern TEXT NOT NULL,
+    is_regex INTEGER NOT NULL DEFAULT 0,
+    sign TEXT CHECK (sign IN ('in', 'out')),
+    account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+    set_kind TEXT,
+    set_category TEXT,
+    set_bucket TEXT,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];

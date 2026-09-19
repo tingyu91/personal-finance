@@ -4,12 +4,14 @@ import path from 'node:path';
 import type { Paths } from '../config';
 import type { Db } from '../db/open';
 import { detectAdapter } from '../adapters';
-import type { AccountRef, ParsedStatement, PdfDoc } from '../adapters/types';
+import type { AccountRef, Adapter, ParsedStatement, PdfDoc } from '../adapters/types';
 import { dayLabel, monthLabel, sgtDate } from '../core/dates';
 import { assignFingerprints } from '../core/fingerprint';
 import { accountLabel } from '../core/labels';
 import { formatSGD } from '../core/money';
 import { redact } from '../core/redact';
+import { classifyAll } from '../classify/run';
+import { loadSettings } from '../settings';
 import { extractPdf, PdfPasswordError } from '../pdf/extract';
 import { reconcile, type ReconcileResult } from '../reconcile';
 import { stageVault, vaultRelPath, type StagedFile } from './vault';
@@ -119,38 +121,154 @@ function upsertAccount(db: Db, a: AccountRef, month: string): number {
   return existing.id;
 }
 
-export async function importPdf(db: Db, paths: Paths, file: ImportFile, deps: ImportDeps = {}): Promise<ReceiptItem> {
+/** What reading one PDF learnt, before anything is written. */
+export interface ParsedFile {
+  name: string;
+  sha: string;
+  adapter: Adapter;
+  statements: ParsedStatement[];
+}
+
+/** Reads, detects and parses a PDF. Never touches the database. */
+export async function readPdf(file: ImportFile, deps: ImportDeps = {}): Promise<{ parsed: ParsedFile } | { receipt: ReceiptItem }> {
   const extract = deps.extract ?? extractPdf;
-  const now = (deps.now ?? (() => new Date()))();
   const name = redact(path.basename(file.name));
-  const sha = sha256(file.data);
-
-  const prior = db.prepare('SELECT imported_at FROM files WHERE sha256 = ?').get(sha) as { imported_at: string } | undefined;
-  if (prior) return { name, status: 'duplicate', detail: `Already here, imported ${dayLabel(sgtDate(prior.imported_at))}` };
-
   let doc: PdfDoc;
   try {
     doc = await extract(file.data, file.password);
   } catch (e) {
     if (e instanceof PdfPasswordError) {
-      return { name, status: 'locked', detail: e.reason === 'incorrect' ? 'That password did not open it' : 'This PDF needs its password' };
+      return { receipt: { name, status: 'locked', detail: e.reason === 'incorrect' ? 'That password did not open it' : 'This PDF needs its password' } };
     }
-    return { name, status: 'unrecognised', detail: 'Tally could not read this file as a PDF' };
+    return { receipt: { name, status: 'unrecognised', detail: 'Tally could not read this file as a PDF' } };
   }
-
   const hit = detectAdapter(doc);
-  if (!hit) return { name, status: 'unrecognised', detail: 'Not a statement layout Tally knows yet (DBS, POSB and UOB so far)' };
-  let parsed: ParsedStatement[];
+  if (!hit) return { receipt: { name, status: 'unrecognised', detail: 'Not a statement layout Tally knows yet (DBS, POSB and UOB so far)' } };
+  let statements: ParsedStatement[];
   try {
-    parsed = hit.adapter.parse(doc);
+    statements = hit.adapter.parse(doc);
   } catch {
-    parsed = [];
+    statements = [];
   }
-  if (!parsed.length) return { name, status: 'unrecognised', detail: `Looks like ${hit.adapter.bank}, but the layout did not parse` };
+  if (!statements.length) return { receipt: { name, status: 'unrecognised', detail: `Looks like ${hit.adapter.bank}, but the layout did not parse` } };
+  return { parsed: { name, sha: sha256(file.data), adapter: hit.adapter, statements } };
+}
+
+export interface Stored {
+  results: { s: ParsedStatement; rec: ReconcileResult }[];
+  month: string;
+  inserted: number;
+  skipped: number;
+}
+
+/**
+ * Writes a parsed file, its statements and rows. Synchronous, so the caller can wrap it in one
+ * transaction with anything else. `accepted` carries "accept these totals" through a rebuild,
+ * keyed `account|month|opening|closing`.
+ */
+export function storeParsed(
+  db: Db,
+  parsed: ParsedFile,
+  statements: ParsedStatement[],
+  opts: { vaultPath: string; importedAt: string; accepted?: Set<string> },
+): Stored {
+  const results = statements.map((s) => ({ s, rec: reconcile(s) }));
+  const month = statements.map((s) => s.period.month).sort().at(-1)!;
+  const fileId = Number(
+    db
+      .prepare('INSERT INTO files (sha256, original_name, vault_path, adapter_id, adapter_version, month, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(parsed.sha, parsed.name, opts.vaultPath, parsed.adapter.id, parsed.adapter.version, month, opts.importedAt).lastInsertRowid,
+  );
+  const insertRow = db.prepare(
+    `INSERT INTO transactions
+     (statement_id, account_id, seq, date, post_date, raw, payee, amount_cents, currency, balance_cents, fx_currency, fx_amount_cents, cardholder, card_last4, fingerprint)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (fingerprint) DO NOTHING`,
+  );
+  let inserted = 0;
+  let skipped = 0;
+  for (const { s, rec } of results) {
+    const accountId = upsertAccount(db, s.account, s.period.month);
+    const accepted = !rec.ok && (opts.accepted?.has(`${accountKey(s.account)}|${s.period.month}|${s.openingCents}|${s.closingCents}`) ?? false);
+    const statementId = Number(
+      db
+        .prepare(
+          `INSERT INTO statements (file_id, account_id, month, period_start, period_end, opening_cents, closing_cents, printed_json, checks_json, reconciled, accepted, meta_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          fileId,
+          accountId,
+          s.period.month,
+          s.period.start,
+          s.period.end,
+          s.openingCents,
+          s.closingCents,
+          JSON.stringify(s.printed),
+          JSON.stringify(rec.checks),
+          rec.ok ? 1 : 0,
+          accepted ? 1 : 0,
+          JSON.stringify(s.meta ?? {}),
+        ).lastInsertRowid,
+    );
+    // Fingerprints come from the text as printed, so redaction rules never move them.
+    const rows = assignFingerprints(
+      accountKey(s.account),
+      s.rows.map((r) => ({ ...r, raw: r.lines.join(RAW_JOIN) })),
+    );
+    let statementSkipped = 0;
+    rows.forEach((r, seq) => {
+      const res = insertRow.run(
+        statementId,
+        accountId,
+        seq,
+        r.date,
+        r.postDate ?? null,
+        redact(r.raw),
+        redact(firstPassPayee(r.lines)),
+        r.amountCents,
+        s.account.currency,
+        r.balanceCents ?? null,
+        r.fx?.currency ?? null,
+        r.fx?.amountCents ?? null,
+        r.cardholder ?? null,
+        r.cardLast4 ?? null,
+        r.fingerprint,
+      );
+      if (res.changes) inserted++;
+      else statementSkipped++;
+    });
+    if (statementSkipped) db.prepare('UPDATE statements SET rows_skipped = ? WHERE id = ?').run(statementSkipped, statementId);
+    skipped += statementSkipped;
+  }
+  return { results, month, inserted, skipped };
+}
+
+/** The receipt for a stored file. */
+export function storedReceipt(name: string, statements: ParsedStatement[], stored: Stored): ReceiptItem {
+  const allOk = stored.results.every((r) => r.rec.ok);
+  const rowsText = `${stored.inserted} ${stored.inserted === 1 ? 'row' : 'rows'}${stored.skipped ? `, ${stored.skipped} already here` : ''}`;
+  return {
+    name,
+    status: allOk ? 'imported' : 'failed',
+    detail: allOk ? `${labels(statements)}, ${monthLabel(stored.month)}, ${rowsText}` : failureDetail(stored.results),
+    statements: stored.results.map(({ s, rec }) => ({ account: accountLabel(s.account), month: s.period.month, rows: s.rows.length, reconciled: rec.ok })),
+  };
+}
+
+export async function importPdf(db: Db, paths: Paths, file: ImportFile, deps: ImportDeps = {}): Promise<ReceiptItem> {
+  const now = (deps.now ?? (() => new Date()))();
+  const name = redact(path.basename(file.name));
+  const prior = db.prepare('SELECT imported_at FROM files WHERE sha256 = ?').get(sha256(file.data)) as { imported_at: string } | undefined;
+  if (prior) return { name, status: 'duplicate', detail: `Already here, imported ${dayLabel(sgtDate(prior.imported_at))}` };
+
+  const read = await readPdf(file, deps);
+  if ('receipt' in read) return read.receipt;
+  const { parsed } = read;
 
   // Each statement on its own: already here, clashing with one already here, or new.
   const fresh: ParsedStatement[] = [];
-  for (const s of parsed) {
+  for (const s of parsed.statements) {
     const e = existingStatement(db, s);
     if (!e) fresh.push(s);
     else if (e.opening_cents !== s.openingCents || e.closing_cents !== s.closingCents) {
@@ -163,89 +281,29 @@ export async function importPdf(db: Db, paths: Paths, file: ImportFile, deps: Im
   }
   if (!fresh.length) return { name, status: 'duplicate', detail: 'Same statement as one already here' };
 
-  const results = fresh.map((s) => ({ s, rec: reconcile(s) }));
   const month = fresh.map((s) => s.period.month).sort().at(-1)!;
   const first = fresh[0]!.account;
   const distinct = new Set(fresh.map((s) => s.account.last4));
   const rel =
     distinct.size === 1
-      ? vaultRelPath(first.bank, first.product, first.last4, month, hit.adapter.kind)
-      : vaultRelPath(first.bank, first.kind === 'card' ? 'cards' : 'accounts', '', month, hit.adapter.kind);
+      ? vaultRelPath(first.bank, first.product, first.last4, month, parsed.adapter.kind)
+      : vaultRelPath(first.bank, first.kind === 'card' ? 'cards' : 'accounts', '', month, parsed.adapter.kind);
 
   const staged = (deps.stageVault ?? stageVault)(paths.vaultDir, rel, file.data);
-  let inserted = 0;
-  let skipped = 0;
+  let stored: Stored;
   try {
-    db.transaction(() => {
-      const fileId = Number(
-        db
-          .prepare('INSERT INTO files (sha256, original_name, vault_path, adapter_id, adapter_version, month, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .run(sha, name, staged.rel, hit.adapter.id, hit.adapter.version, month, now.toISOString()).lastInsertRowid,
-      );
-      const insertRow = db.prepare(
-        `INSERT INTO transactions
-         (statement_id, account_id, seq, date, post_date, raw, payee, amount_cents, currency, balance_cents, fx_currency, fx_amount_cents, cardholder, card_last4, fingerprint)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (fingerprint) DO NOTHING`,
-      );
-      for (const { s, rec } of results) {
-        const accountId = upsertAccount(db, s.account, s.period.month);
-        const statementId = Number(
-          db
-            .prepare(
-              `INSERT INTO statements (file_id, account_id, month, period_start, period_end, opening_cents, closing_cents, printed_json, checks_json, reconciled, meta_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            )
-            .run(fileId, accountId, s.period.month, s.period.start, s.period.end, s.openingCents, s.closingCents, JSON.stringify(s.printed), JSON.stringify(rec.checks), rec.ok ? 1 : 0, JSON.stringify(s.meta ?? {}))
-            .lastInsertRowid,
-        );
-        // Fingerprints come from the text as printed, so redaction rules never move them.
-        const rows = assignFingerprints(
-          accountKey(s.account),
-          s.rows.map((r) => ({ ...r, raw: r.lines.join(RAW_JOIN) })),
-        );
-        let statementSkipped = 0;
-        rows.forEach((r, seq) => {
-          const res = insertRow.run(
-            statementId,
-            accountId,
-            seq,
-            r.date,
-            r.postDate ?? null,
-            redact(r.raw),
-            redact(firstPassPayee(r.lines)),
-            r.amountCents,
-            s.account.currency,
-            r.balanceCents ?? null,
-            r.fx?.currency ?? null,
-            r.fx?.amountCents ?? null,
-            r.cardholder ?? null,
-            r.cardLast4 ?? null,
-            r.fingerprint,
-          );
-          if (res.changes) inserted++;
-          else statementSkipped++;
-        });
-        if (statementSkipped) db.prepare('UPDATE statements SET rows_skipped = ? WHERE id = ?').run(statementSkipped, statementId);
-        skipped += statementSkipped;
-      }
+    stored = db.transaction(() => {
+      const s = storeParsed(db, parsed, fresh, { vaultPath: staged.rel, importedAt: now.toISOString() });
       // Last step inside the transaction: if the vault copy cannot be moved into place (a sync
       // or antivirus lock), the whole import rolls back and the file can simply be dropped again.
       staged.commit();
+      return s;
     })();
   } catch (e) {
     staged.discard();
     throw e;
   }
-
-  const allOk = results.every((r) => r.rec.ok);
-  const rowsText = `${inserted} ${inserted === 1 ? 'row' : 'rows'}${skipped ? `, ${skipped} already here` : ''}`;
-  return {
-    name,
-    status: allOk ? 'imported' : 'failed',
-    detail: allOk ? `${labels(fresh)}, ${monthLabel(month)}, ${rowsText}` : failureDetail(results),
-    statements: results.map(({ s, rec }) => ({ account: accountLabel(s.account), month: s.period.month, rows: s.rows.length, reconciled: rec.ok })),
-  };
+  return storedReceipt(name, fresh, stored);
 }
 
 const SUMMARY: [ReceiptStatus, (n: number) => string][] = [
@@ -267,7 +325,10 @@ export function summarise(items: ReceiptItem[]): string {
   return parts.map((p) => `${p[0]!.toUpperCase()}${p.slice(1)}.`).join(' ');
 }
 
-/** Imports one file after another. A file that throws gets an "error" receipt; the rest still import. */
+/**
+ * Imports one file after another. A file that throws gets an "error" receipt; the rest still
+ * import. When anything new arrived, every row is re-classified once at the end.
+ */
 export async function importFiles(db: Db, paths: Paths, files: ImportFile[], deps: ImportDeps = {}): Promise<{ items: ReceiptItem[]; summary: string }> {
   const items: ReceiptItem[] = [];
   for (const f of files) {
@@ -277,7 +338,15 @@ export async function importFiles(db: Db, paths: Paths, files: ImportFile[], dep
       items.push({ name: redact(path.basename(f.name)), status: 'error', detail: `Could not import this file: ${(e as Error).message}` });
     }
   }
-  return { items, summary: summarise(items) };
+  let summary = summarise(items);
+  if (items.some((i) => i.status === 'imported' || i.status === 'failed')) {
+    try {
+      classifyAll(db, loadSettings(paths));
+    } catch (e) {
+      summary += ` Sorting the new rows failed: ${(e as Error).message}`;
+    }
+  }
+  return { items, summary };
 }
 
 /** Every *.pdf under the given folders, recursively, sorted. Missing folders are skipped. */
