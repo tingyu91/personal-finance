@@ -9,7 +9,10 @@ export interface Paths {
   dbFile: string;
   vaultDir: string;
   rulesDir: string;
+  /** The first inbox folder (inputs/statements unless overridden). */
   inboxDir: string;
+  /** Every inbox folder: TALLY_INBOX_DIR may list several, separated by path.delimiter. */
+  inboxDirs: string[];
   outputsDir: string;
   reviewsDir: string;
   exportsDir: string;
@@ -20,7 +23,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 export function getPaths(env: NodeJS.ProcessEnv = process.env): Paths {
   const dataDir = env.TALLY_DATA_DIR ? path.resolve(env.TALLY_DATA_DIR) : path.join(ROOT, 'data');
   const outputsDir = env.TALLY_OUTPUTS_DIR ? path.resolve(env.TALLY_OUTPUTS_DIR) : path.join(ROOT, 'outputs');
-  const inboxDir = env.TALLY_INBOX_DIR ? path.resolve(env.TALLY_INBOX_DIR) : path.join(ROOT, 'inputs', 'statements');
+  const inboxDirs = env.TALLY_INBOX_DIR
+    ? env.TALLY_INBOX_DIR.split(path.delimiter).filter(Boolean).map((d) => path.resolve(d))
+    : [path.join(ROOT, 'inputs', 'statements')];
+  const inboxDir = inboxDirs[0]!;
   return {
     root: ROOT,
     dataDir,
@@ -28,6 +34,7 @@ export function getPaths(env: NodeJS.ProcessEnv = process.env): Paths {
     vaultDir: path.join(dataDir, 'vault'),
     rulesDir: path.join(dataDir, 'rules'),
     inboxDir,
+    inboxDirs,
     outputsDir,
     reviewsDir: path.join(outputsDir, 'reviews'),
     exportsDir: path.join(outputsDir, 'exports'),

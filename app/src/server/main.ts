@@ -3,12 +3,14 @@ import path from 'node:path';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { ensureDirs, getPaths } from '../config';
+import { openDb } from '../db/open';
 import { createApp, LISTEN } from './app';
 
 const paths = getPaths();
 ensureDirs(paths);
+const db = openDb(paths.dbFile);
 
-const app = createApp({ paths });
+const app = createApp({ paths, db });
 
 if (process.argv.includes('--static')) {
   // npm start: serve the built UI from dist/web, falling back to index.html.

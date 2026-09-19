@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { getPaths, ensureDirs } from './config';
+import { useTmpDirs } from '../test/tmp';
+
+const tmpDirs = useTmpDirs();
 
 describe('config', () => {
   it('defaults data to personal-finance/data and the inbox to inputs/statements', () => {
@@ -22,8 +24,15 @@ describe('config', () => {
     expect(p.vaultDir).toBe(path.join(path.resolve('/tmp/x'), 'vault'));
   });
 
+  it('accepts a list of inbox folders separated by the platform delimiter', () => {
+    const p = getPaths({ TALLY_INBOX_DIR: ['/tmp/a', '/tmp/b'].join(path.delimiter) });
+    expect(p.inboxDirs).toEqual([path.resolve('/tmp/a'), path.resolve('/tmp/b')]);
+    expect(p.inboxDir).toBe(path.resolve('/tmp/a'));
+    expect(getPaths({}).inboxDirs).toEqual([getPaths({}).inboxDir]);
+  });
+
   it('creates the data and outputs trees but never inputs/', () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tally-'));
+    const tmp = tmpDirs.dir();
     const p = getPaths({
       TALLY_DATA_DIR: path.join(tmp, 'data'),
       TALLY_OUTPUTS_DIR: path.join(tmp, 'outputs'),
