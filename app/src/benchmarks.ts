@@ -40,6 +40,9 @@ export interface Benchmarks {
     staleDays: number;
     largeUnsortedCents: number;
     outsideFactsStaleDays: number;
+    bonusActWorthCentsPerYear: number;
+    budgetWatchRatio: number;
+    duplicateSeriesCount: number;
   };
 }
 

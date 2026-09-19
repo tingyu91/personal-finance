@@ -198,3 +198,11 @@ a.ty-btn { text-decoration: none; }
 
 /* Stat tiles in a row share a height; keep their content at the top. */
 .stats .ty-stat { align-content: start; }
+
+/* Insights: grouped by level, insights stacked in one card divided by hairlines (design system). */
+.insight-group { overflow: hidden; }
+.insight-group-head { padding: var(--space-4) var(--space-4) var(--space-3); border-bottom: 1px solid var(--line); }
+.insight-group .ty-insight:first-of-type { border-top: 0; }
+.insight-controls { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); align-items: center; }
+.quiet-link { color: var(--ink-muted); text-decoration-color: var(--line-strong); font-weight: 400; }
+.quiet-link[disabled] { opacity: .5; cursor: not-allowed; }

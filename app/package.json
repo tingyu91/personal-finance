@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "import": "tsx src/cli/import.ts",
-    "rebuild": "tsx src/cli/rebuild.ts"
+    "rebuild": "tsx src/cli/rebuild.ts",
+    "review": "tsx src/cli/review.ts"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

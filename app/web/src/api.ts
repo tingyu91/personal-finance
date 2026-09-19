@@ -1,12 +1,13 @@
 import type { OverviewData } from '../../src/reports/overview';
 import type { HomeData } from '../../src/reports/home';
+import type { InsightItem } from '../../src/insights/rules';
 import type { CoverageRow } from '../../src/reports/coverage';
 import type { Ledger } from '../../src/reports/ledger';
 import type { FileView } from '../../src/reports/statements';
 import type { TransactionView } from '../../src/queries/transactions';
 import type { ReceiptItem } from './ds';
 
-export type { OverviewData, CoverageRow, Ledger, FileView, TransactionView, HomeData };
+export type { OverviewData, CoverageRow, Ledger, FileView, TransactionView, HomeData, InsightItem };
 
 export interface VendorInput {
   name?: string;
@@ -67,6 +68,8 @@ export interface LedgerFilters {
   kind?: string;
   review?: boolean;
   q?: string;
+  /** Only the rows behind one insight. */
+  insight?: string;
   limit?: number;
 }
 
@@ -98,6 +101,7 @@ function query(f: LedgerFilters): string {
   if (f.kind) q.set('kind', f.kind);
   if (f.review) q.set('review', '1');
   if (f.q) q.set('q', f.q);
+  if (f.insight) q.set('insight', f.insight);
   if (f.limit) q.set('limit', String(f.limit));
   const s = q.toString();
   return s ? `?${s}` : '';
@@ -108,7 +112,7 @@ export const api = {
   accounts: () => call<{ accounts: AccountView[] }>('/api/accounts'),
   coverage: () => call<{ months: string[]; rows: CoverageRow[] }>('/api/coverage'),
   overview: (month?: string) => call<OverviewData | { empty: true; months: string[] }>(`/api/overview${month ? `?month=${month}` : ''}`),
-  transactions: (f: LedgerFilters) => call<Ledger>(`/api/transactions${query(f)}`),
+  transactions: (f: LedgerFilters) => call<Ledger & { insight?: { key: string; title: string } | null }>(`/api/transactions${query(f)}`),
   files: () => call<{ files: FileView[] }>('/api/files'),
   importFiles: (files: File[], password?: string) => {
     const form = new FormData();
@@ -131,6 +135,10 @@ export const api = {
   addVendor: (v: VendorInput) => call<{ id: number }>('/api/home/vendors', json('POST', v)),
   updateVendor: (id: number, v: VendorInput) => call<{ ok: true }>(`/api/home/vendors/${id}`, json('PATCH', v)),
   deleteVendor: (id: number) => call<{ ok: true }>(`/api/home/vendors/${id}`, { method: 'DELETE' }),
+  insights: () => call<{ insights: InsightItem[]; hidden: number }>('/api/insights'),
+  dismissInsight: (key: string, days?: number) => call<{ ok: true }>('/api/insights/dismiss', json('POST', { key, days })),
+  restoreInsights: () => call<{ restored: number }>('/api/insights/restore', { method: 'POST' }),
+  writeReview: (month: string) => call<{ file: string }>(`/api/review/${month}`, { method: 'POST' }),
   /** The CSV bytes, its file name, and whether a copy was saved to outputs/exports. */
   exportHome: async (): Promise<{ blob: Blob; name: string; saved: boolean }> => {
     let res: Response;

@@ -9,6 +9,7 @@ import { clearDecision, DecisionError, deleteRule, listRules, listSeedRules, set
 import { getTransaction } from '../queries/transactions';
 import { registerScreenRoutes } from './screens';
 import { registerHomeRoutes } from './home';
+import { registerInsightRoutes } from './insights';
 
 /** A JSON object body, or {} for anything else (null, arrays, malformed JSON). */
 async function readObject(req: Request): Promise<Record<string, unknown>> {
@@ -152,6 +153,7 @@ export function createApp(ctx: AppContext): Hono {
 
   registerScreenRoutes(api, ctx.paths, db, serial);
   registerHomeRoutes(api, ctx.paths, db, serial);
+  registerInsightRoutes(api, ctx.paths, db, serial);
 
   api.all('*', (c) => c.json({ error: 'Not found' }, 404));
   app.route('/api', api);

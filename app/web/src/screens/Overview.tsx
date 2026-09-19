@@ -2,11 +2,35 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Amount, Stat } from '../ds';
 import { CategoryBars } from '../charts/CategoryBars';
 import { MonthColumns } from '../charts/MonthColumns';
-import { useLoad } from '../data';
+import { useData, useLoad } from '../data';
 import { formatSGD, longDate, monthLabel, percent } from '../format';
 import { href, useRoute } from '../router';
 import type { OverviewData } from '../api';
 import { Empty, Page } from './Page';
+import { InsightCard } from './Insights';
+
+/** The top three insights (PRD §7.4 screen 1), with a way to all of them. */
+function TopInsights() {
+  const { changed } = useData();
+  const res = useLoad((a) => a.insights(), []);
+  const items = res.data?.insights ?? [];
+  if (!items.length) return null;
+  return (
+    <section className="ty-card insight-group" aria-labelledby="top-insights">
+      <div className="section-head insight-group-head">
+        <h2 className="heading" id="top-insights">
+          Worth a look
+        </h2>
+        <a className="ty-link" href={href('insights')}>
+          See all {items.length} insights
+        </a>
+      </div>
+      {items.slice(0, 3).map((i) => (
+        <InsightCard key={i.key} item={i} onChanged={changed} compact />
+      ))}
+    </section>
+  );
+}
 
 function list(items: string[]): string {
   if (items.length <= 1) return items.join('');
@@ -208,6 +232,8 @@ export function Overview() {
           <MonthColumns label="Cash on hand" points={o.cashTrend.slice(-12)} current={o.month} />
         </section>
       </div>
+
+      <TopInsights />
     </Page>
   );
 }

@@ -175,7 +175,7 @@ describe('step 3: card repayments', () => {
 
 describe('investments and wallets', () => {
   it('recognises brokers either way, wallet top-ups and wallet overflow', () => {
-    const ibkr = row(2, '2026-04-01', -173_00, 'Inward Debit-FAST · OTHR U·1234.5678 · Interactive Brokers · U·1234');
+    const ibkr = row(2, '2026-04-01', -173_00, 'Inward Debit-FAST · OTHR U·1234.5678 · Tiger Brokers · U·1234');
     const paylah = row(1, '2026-04-01', -8_50, 'Funds Transfer · TOP-UP TO PAYLAH! : · ALEX TAN · PLPE·0001');
     const wise = row(2, '2026-04-01', -250_00, 'PAYNOW-FAST · PIB·7104 · WISE ASIA-PACIFIC PT · OTHR P·7112QR');
     const r = run([ibkr, paylah, wise]);
