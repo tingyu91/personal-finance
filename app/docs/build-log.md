@@ -176,3 +176,10 @@ citizens and PRs; CPF cash top-up relief up to S$8,000 for yourself and S$8,000 
 One page did not load, so its tiers come from a review site quoting it (growbeansprout.com,
 8 Sep 2026); the file says so. Check the UOB figures on uob.com.sg before relying on rule 2's
 estimate.
+
+## Block 6 — Missing card adapters (ongoing)
+
+Nothing to build yet: no statements for the cards Tally only sees as repayment targets have been
+added. When one arrives, add an adapter in `src/adapters/` test first (a synthetic fixture that is
+committed, and a reconciliation test against the real PDF that skips when it is absent), hold it
+to the cent like the others, and check the card's unseen figure falls to zero for those months.
