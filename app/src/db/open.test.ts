@@ -22,7 +22,7 @@ describe('openDb', () => {
   it('creates the core tables', () => {
     const db = openDb(tmpFile());
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[];
-    expect(tables.map((t) => t.name)).toEqual(expect.arrayContaining(['accounts', 'files', 'statements', 'transactions']));
+    expect(tables.map((t) => t.name)).toEqual(expect.arrayContaining(['accounts', 'files', 'statements', 'transactions', 'decisions', 'rules', 'projects', 'vendors']));
     db.close();
   });
 

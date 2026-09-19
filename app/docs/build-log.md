@@ -106,3 +106,41 @@ Decisions taken while building:
   your accounts goes back to being a card Tally only sees as a repayment target.
 - **Manual entries** are checked like decisions (a category matches its kind, buckets only on
   spending) and must be dated within a month of today.
+
+## Block 4 — Home project (2026-09-19)
+
+**Done-check:** met, on a scratch copy of the data.
+
+- Every home payment Tally can see on the sample sits in a bucket (purchase, renovation or
+  furnishing); none needs one.
+- The total, each bucket, the vendors and the payers each equal the sum of their rows, checked
+  against an independent SQL query to the cent.
+- The CSV export opens in Excel itself: nine columns, one line per payment, every amount read as a
+  number and every date as a date, no formulas and no error cells. It carries a byte-order mark and
+  CRLF line ends, and text that starts with =, +, - or @ is defused.
+
+What the screen shows: the total as the one headline, the period and budget (editable), about how
+much more may be missing (repayments to cards with no statements, and wallet top-ups, during the
+project), large payments still in Review, the split by bucket and by who paid, the partner's
+transfers into the joint account whose purpose names something for the home, vendors with contract
+sums and balances, a running total by month, the unseen cards, and every payment.
+
+Decisions taken while building:
+
+- **One project, "Home".** Until you set a start it follows the first month with statements (PRD §9),
+  so importing older statements later moves it back; nothing is stored until you edit it. The end
+  and budget stay open until you set them. Every home row counts whatever its date; the period
+  frames the unseen money, the partner's transfers and payments after the end.
+- **The export is a button, not a link:** it asks the local server (a POST, so no other website can)
+  and downloads the file. If the saved copy is open in Excel, the download still works and says so.
+- **A vendor** is a name and the text that marks it on a statement; its contract sum is optional. A
+  vendor you set on a row wins over a match; anything unmatched groups by payee.
+- **Who paid** follows the paying account: you, the joint account, or the partner when the cardholder
+  on a card row is the partner.
+- **Partner transfers** count toward the home when their purpose line names a vendor, a seeded home
+  merchant or a renovation word (lighting, sofa, tap, deposit, and so on). They are shown, never added
+  to the total, because the joint-account payments they funded are already counted.
+- **Most of the renovation is still outside the total.** On the sample, the large renovation
+  payments made by bank transfer wait in Review, and much more went to cards with no statements.
+  Sorting the Review queue once and adding the missing card statements (Block 6) completes the answer.
+
