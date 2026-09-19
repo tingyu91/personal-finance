@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env*
+
+# Personal data never enters git (PRD §6)
+data/
+inputs/statements/
+outputs/
+*.pdf
+*.db
+*.db-journal
