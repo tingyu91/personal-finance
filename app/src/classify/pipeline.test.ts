@@ -207,6 +207,16 @@ describe('your own name on the other side', () => {
   });
 });
 
+describe('partner contributions', () => {
+  it('names a transfer with only a purpose code after the partner, and keeps a real purpose line', () => {
+    const bare = row(3, '2026-08-28', 1_500_00, 'Advice FAST Payment / Receipt · OTHER · ·0000OCBCSGSGBRT0000001 · OTHER');
+    const tagged = row(3, '2026-08-01', 612_00, 'Advice FAST Payment / Receipt · SAM HOUSEHOLD AUG · ·0001OCBCSGSGBRT7000001 · OTHER');
+    const r = run([bare, tagged]);
+    expect(r.get(bare)).toMatchObject({ kind: 'partner-contribution', payee: 'Sam' });
+    expect(r.get(tagged)).toMatchObject({ kind: 'partner-contribution', payee: 'Sam Household Aug' });
+  });
+});
+
 describe('your rules, then seeded rules', () => {
   it('applies your payee rule before a seed', () => {
     const bus = row(4, '2026-07-21', -6_13, 'BUS/MRT ·7113 SINGAPORE');

@@ -57,6 +57,10 @@ function validatePatch(patch: DecisionPatch): void {
 }
 
 /** The decision as it will be stored: the kind and category must agree, and buckets are for spending. */
+export function validateShape(m: Pick<Merged, 'kind' | 'category' | 'bucket'>): void {
+  validateMerged({ vendor: null, note: null, ...m });
+}
+
 function validateMerged(m: Merged): void {
   if (m.category) {
     const implied = kindForCategory(m.category);
@@ -71,35 +75,22 @@ function validateMerged(m: Merged): void {
   if (m.bucket && kind && kind !== 'spend') throw new DecisionError('Only spending can go to the home project.');
 }
 
-type TxRow = Merged & { payee: string; amount_cents: number; manual: number };
+type TxRow = { payee: string; amount_cents: number; manual: number };
 
 /**
- * The decision as it will be stored. A manual entry is yours already, so it starts from the row
- * itself, and a new category on it brings its kind along.
+ * The decision as it will be stored: the one already here with the patch on top. Picking a
+ * category without a kind brings the category's kind along, so "Salary" on a row you had
+ * called spending makes it income.
  */
-function merged(db: Db, fingerprint: string, row: TxRow, patch: DecisionPatch): Merged {
-  const existing = row.manual
-    ? { kind: row.kind, category: row.category, bucket: row.bucket, vendor: row.vendor, note: row.note }
-    : (db.prepare('SELECT kind, category, bucket, vendor, note FROM decisions WHERE fingerprint = ?').get(fingerprint) as Merged | undefined);
+function merged(db: Db, fingerprint: string, patch: DecisionPatch): Merged {
+  const existing = db.prepare('SELECT kind, category, bucket, vendor, note FROM decisions WHERE fingerprint = ?').get(fingerprint) as Merged | undefined;
   const m: Merged = { kind: null, category: null, bucket: null, vendor: null, note: null, ...existing };
   for (const f of FIELDS) if (patch[f] !== undefined) m[f] = patch[f] ?? null;
-  if (row.manual && patch.kind === undefined && patch.category) m.kind = kindForCategory(patch.category) ?? m.kind;
+  if (patch.kind === undefined && patch.category) m.kind = kindForCategory(patch.category) ?? m.kind;
   return m;
 }
 
-/** Decisions on imported rows live in their own table; a manual entry is edited in place. */
-function write(db: Db, fingerprint: string, row: TxRow, m: Merged, now: string): void {
-  if (row.manual) {
-    db.prepare('UPDATE transactions SET kind = ?, category = ?, bucket = ?, vendor = ?, note = ?, needs_review = 0 WHERE fingerprint = ?').run(
-      m.kind ?? kindForCategory(m.category) ?? row.kind,
-      m.category,
-      m.bucket,
-      m.vendor,
-      m.note,
-      fingerprint,
-    );
-    return;
-  }
+function write(db: Db, fingerprint: string, m: Merged, now: string): void {
   db.prepare(
     `INSERT INTO decisions (fingerprint, kind, category, bucket, vendor, note, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (fingerprint) DO UPDATE SET kind = excluded.kind, category = excluded.category, bucket = excluded.bucket,
@@ -108,7 +99,7 @@ function write(db: Db, fingerprint: string, row: TxRow, m: Merged, now: string):
 }
 
 function rowFor(db: Db, fingerprint: string): TxRow {
-  const row = db.prepare('SELECT payee, amount_cents, manual, kind, category, bucket, vendor, note FROM transactions WHERE fingerprint = ?').get(fingerprint) as
+  const row = db.prepare('SELECT payee, amount_cents, manual FROM transactions WHERE fingerprint = ?').get(fingerprint) as
     | TxRow
     | undefined;
   if (!row) throw new DecisionError('That transaction is not here any more.');
@@ -122,14 +113,14 @@ function rowFor(db: Db, fingerprint: string): TxRow {
 export function setDecision(db: Db, paths: Paths, fingerprint: string, patch: DecisionPatch, opts: { always?: boolean } = {}): { ruleRows?: number } {
   validatePatch(patch);
   const row = rowFor(db, fingerprint);
-  const m = merged(db, fingerprint, row, patch);
+  const m = merged(db, fingerprint, patch);
   validateMerged(m);
   const kind = (m.kind ?? kindForCategory(m.category)) as Kind | null;
   if (opts.always && !kind) throw new DecisionError(`Choose a kind or a category to make this a rule for ${row.payee}.`);
   const now = new Date().toISOString();
   let ruleId: number | null = null;
   db.transaction(() => {
-    write(db, fingerprint, row, m, now);
+    write(db, fingerprint, m, now);
     if (opts.always && kind) {
       const sign = row.amount_cents < 0 ? 'out' : 'in';
       db.prepare("DELETE FROM rules WHERE source = 'user' AND field = 'payee' AND lower(pattern) = lower(?) AND sign = ?").run(row.payee, sign);
@@ -156,18 +147,23 @@ export function setDecisions(db: Db, paths: Paths, fingerprints: string[], patch
   const now = new Date().toISOString();
   db.transaction(() => {
     for (const fp of unique) {
-      const row = rowFor(db, fp);
-      const m = merged(db, fp, row, patch);
+      rowFor(db, fp);
+      const m = merged(db, fp, patch);
       validateMerged(m);
-      write(db, fp, row, m, now);
+      write(db, fp, m, now);
     }
   })();
   classifyAll(db, loadSettings(paths));
   return unique.length;
 }
 
-/** Removes your decision on a row. False when there was none. */
+/**
+ * Removes your decision on a row. False when there was none. A manual entry is its decision,
+ * so it can be changed or deleted, not cleared.
+ */
 export function clearDecision(db: Db, paths: Paths, fingerprint: string): boolean {
+  const row = db.prepare('SELECT manual FROM transactions WHERE fingerprint = ?').get(fingerprint) as { manual: number } | undefined;
+  if (row?.manual) throw new DecisionError('A manual entry keeps what you entered. Change it, or delete the entry.');
   const removed = db.prepare('DELETE FROM decisions WHERE fingerprint = ?').run(fingerprint).changes > 0;
   if (removed) classifyAll(db, loadSettings(paths));
   return removed;

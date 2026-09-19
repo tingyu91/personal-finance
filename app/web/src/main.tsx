@@ -8,6 +8,7 @@ import '@fontsource/geist-mono/500.css';
 import './styles/tokens.css';
 import './styles/components.css';
 import './styles/base.css';
+import './styles/screens.css';
 import { App } from './App';
 import { applyTheme, readThemePref } from './theme';
 

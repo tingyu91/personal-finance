@@ -6,6 +6,7 @@ import { openDb, type Db } from './db/open';
 import { importFiles, type ImportDeps } from './import/importer';
 import type { PdfDoc } from './adapters/types';
 import { clearDecision, DecisionError, deleteRule, listRules, setDecision, setDecisions } from './decisions';
+import { addManualEntry } from './manual';
 import { dbsConsolidated } from '../test/fixtures/synthetic/dbs-consolidated';
 import { dbsSavings } from '../test/fixtures/synthetic/dbs-savings';
 import { useTmpDirs } from '../test/tmp';
@@ -95,23 +96,15 @@ describe('decisions', () => {
     expect(() => setDecision(db, paths, 'nope', { kind: 'spend' })).toThrow(new DecisionError('That transaction is not here any more.'));
   });
 
-  it('edits a manual entry in place, and sorting leaves it as you set it', () => {
-    db.prepare(
-      `INSERT INTO transactions (statement_id, account_id, date, raw, payee, amount_cents, fingerprint, manual, kind, category)
-       VALUES (NULL, NULL, '2026-03-01', 'Cash', 'Contractor deposit', -50000, 'manual:1', 1, 'spend', 'Home project')`,
-    ).run();
-    setDecision(db, paths, 'manual:1', { bucket: 'renovation', note: 'Deposit, cash' });
-    expect(db.prepare("SELECT bucket, note FROM transactions WHERE fingerprint = 'manual:1'").get()).toEqual({ bucket: 'renovation', note: 'Deposit, cash' });
-    expect(() => setDecision(db, paths, 'manual:1', { category: 'Other income' })).toThrow(new DecisionError('Only spending can go to the home project.'));
-    setDecision(db, paths, 'manual:1', { category: 'Other income', bucket: null });
-    expect(db.prepare("SELECT kind, category, bucket, note, payee FROM transactions WHERE fingerprint = 'manual:1'").get()).toEqual({
-      kind: 'income',
-      category: 'Other income',
-      bucket: null,
-      note: 'Deposit, cash',
-      payee: 'Contractor deposit',
-    });
-    expect(db.prepare("SELECT COUNT(*) n FROM decisions WHERE fingerprint = 'manual:1'").get()).toEqual({ n: 0 });
+  it('changes a manual entry through its decision, and never clears it', () => {
+    const entry = addManualEntry(db, paths, { date: '2026-03-01', amountCents: -500_00, payee: 'Contractor deposit', kind: 'spend', category: 'Home project' });
+    setDecision(db, paths, entry.fingerprint, { bucket: 'renovation', note: 'Deposit, cash' });
+    const row = () => db.prepare('SELECT kind, category, bucket, note, payee FROM transactions WHERE fingerprint = ?').get(entry.fingerprint);
+    expect(row()).toEqual({ kind: 'spend', category: 'Home project', bucket: 'renovation', note: 'Deposit, cash', payee: 'Contractor deposit' });
+    // A category alone brings its kind along; the bucket has to go, since income has none.
+    setDecision(db, paths, entry.fingerprint, { category: 'Other income', bucket: null });
+    expect(row()).toEqual({ kind: 'income', category: 'Other income', bucket: null, note: 'Deposit, cash', payee: 'Contractor deposit' });
+    expect(() => clearDecision(db, paths, entry.fingerprint)).toThrow(DecisionError);
   });
 
   it('deletes a rule you made', () => {
