@@ -7,6 +7,7 @@ import { findPdfs, importFiles, type ImportDeps, type ImportFile } from '../impo
 import { rebuildFromVault } from '../import/rebuild';
 import { clearDecision, DecisionError, deleteRule, listRules, listSeedRules, setDecision, setDecisions, type DecisionPatch } from '../decisions';
 import { getTransaction } from '../queries/transactions';
+import { registerScreenRoutes } from './screens';
 
 /** A JSON object body, or {} for anything else (null, arrays, malformed JSON). */
 async function readObject(req: Request): Promise<Record<string, unknown>> {
@@ -128,9 +129,14 @@ export function createApp(ctx: AppContext): Hono {
 
   api.delete('/transactions/:fingerprint/decision', async (c) => {
     const fingerprint = c.req.param('fingerprint');
-    const removed = await serial(async () => clearDecision(db(), ctx.paths, fingerprint));
-    if (!removed) return c.json({ error: 'There is no decision on that transaction.' }, 404);
-    return c.json({ transaction: getTransaction(db(), fingerprint) });
+    try {
+      const removed = await serial(async () => clearDecision(db(), ctx.paths, fingerprint));
+      if (!removed) return c.json({ error: 'There is no decision on that transaction.' }, 404);
+      return c.json({ transaction: getTransaction(db(), fingerprint) });
+    } catch (e) {
+      if (e instanceof DecisionError) return c.json({ error: e.message }, 400);
+      throw e;
+    }
   });
 
   api.get('/rules', (c) => c.json({ rules: listRules(db()), seeds: listSeedRules() }));
@@ -142,6 +148,8 @@ export function createApp(ctx: AppContext): Hono {
   });
 
   api.post('/rebuild', async (c) => c.json(await serial(() => rebuildFromVault(db(), ctx.paths, ctx.importDeps))));
+
+  registerScreenRoutes(api, ctx.paths, db, serial);
 
   api.all('*', (c) => c.json({ error: 'Not found' }, 404));
   app.route('/api', api);

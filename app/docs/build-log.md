@@ -66,8 +66,8 @@ Decisions taken while building:
 - **Your rules run before transfer, card and wallet matching** and match on the payee you see,
   so a rule can override a wrong automatic call. Only refund pairs come first, because a refund
   cancels out whatever a rule would say.
-- **Manual entries are edited in place.** A change to one of your own entries updates the row;
-  decisions are for imported rows.
+- **Picking a category brings its kind along.** "Salary" on a row you had called spending makes it
+  income; contradictions (a category on a transfer, a home bucket on income) are refused.
 - **Rebuild from vault never loses rows.** A file that no longer reads (missing, locked, not
   recognised, or clashing with another file) keeps its old rows and says "Kept as it was".
   Sorting runs in the same transaction, so a failure there changes nothing. Import dates carry
@@ -78,3 +78,31 @@ Decisions taken while building:
   match every row); the file is rewritten only when a key is missing.
 - **Seeds are generic.** Merchant names that only your statements would know stay out of the code.
   Sort them once with "always for this payee"; those rules live in your database, not in git.
+
+## Block 3 — Statements, Transactions, Overview (2026-09-19)
+
+**Done-check:** met, on a scratch copy of the data (the real folder is untouched).
+
+- Setting all 28 sample PDFs on the Statements drop zone in headless Edge gives the receipt
+  "28 statements imported."
+- The coverage grid shows the five cards Tally only sees as repayment targets as missing in every
+  month (and the two wallets).
+- August 2026 on Overview matches an independent SQL total over the stored rows to the cent for
+  spending, the home project, income and net savings.
+- Screens checked in light and dark at 1280px and 400px.
+
+Decisions taken while building:
+
+- **The headline is everyday spending.** Tax and fees are in it; the home project is not, and shows
+  on its own line under it. The category bars leave out the home project, and a note names the tax
+  and fees, so the bars and the headline add up.
+- **A home row is spending with category Home project, or any spending with a bucket.** Overview and
+  the Home project screen share that one rule.
+- **Card statements run from the 21st to the 20th.** When a month's card rows stop at the 20th, the
+  month is marked incomplete and the banner says so; held statements are matched by their period.
+- **Money a wallet sends back** ("MAXED OUT FROM PAYLAH") nets against its top-ups in the unseen figure.
+- **Partner transfers with only a FAST code** ("OTHER") show the partner's name as payee.
+- **Removing a file** also removes an account left with no statements; a card still repaid from
+  your accounts goes back to being a card Tally only sees as a repayment target.
+- **Manual entries** are checked like decisions (a category matches its kind, buckets only on
+  spending) and must be dated within a month of today.

@@ -89,8 +89,10 @@ describe('rebuildFromVault', () => {
     setDecision(db, paths, john.fingerprint, { kind: 'spend', category: 'Family & giving', note: 'Gift' });
     setDecision(db, paths, ikea.fingerprint, { bucket: 'renovation' });
 
+    const ids = db.prepare('SELECT id, original_name FROM files ORDER BY id').all();
     const res = await rebuildFromVault(db, paths, deps);
     expect(res.items.map((i) => i.status)).toEqual(['imported', 'imported', 'imported']);
+    expect(db.prepare('SELECT id, original_name FROM files ORDER BY id').all()).toEqual(ids);
     expect(res.summary).toBe('3 statements imported.');
     expect(res.unmatchedDecisions).toBe(0);
     expect(count('SELECT COUNT(*) n FROM transactions')).toBe(rows);

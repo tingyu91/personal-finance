@@ -23,7 +23,7 @@ const kept = (why: string) => `${why.replace(/\.$/, '')}. Kept as it was.`;
  * Nothing is lost on the way. Every file is read and parsed before anything is written. A file
  * that no longer reads (missing, locked, not recognised, or throwing) keeps its old rows. The
  * rest are replaced in one transaction, each file in its own savepoint, so a file whose new
- * reading clashes with a statement already here also keeps its old rows. Sorting runs inside the
+ * reading clashes with a statement already here also keeps its old rows. A file keeps its id. Sorting runs inside the
  * same transaction, so a failure there changes nothing. Import dates carry over, and so does
  * "accept these totals" for a statement that reads the same. Decisions, rules and manual
  * entries are never touched, and decisions are keyed by fingerprint, so they apply again.
@@ -84,7 +84,7 @@ export async function rebuildFromVault(
             }
           }
           if (!fresh.length) throw new KeepFile(kept('Every statement in it is already in another file'));
-          const stored = storeParsed(db, parsed, fresh, { vaultPath: file.vault_path, importedAt: file.imported_at, accepted });
+          const stored = storeParsed(db, parsed, fresh, { vaultPath: file.vault_path, importedAt: file.imported_at, accepted, fileId: file.id });
           return storedReceipt(parsed.name, fresh, stored);
         })();
       } catch (e) {

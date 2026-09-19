@@ -121,6 +121,9 @@ const HARD_IDENTITY = /\bSALA\b|\bTAXS\b|\bPTXP\b|\bMortgage Loan\b|^Interest (E
 const PURCHASE_RAIL = /NETS QR|NETS Debit|Point-Of-Sale|Point-of-Sale|Debit Card Transaction|Purchase with Cash|QR PAYMENT|QASHIER|HITPAY/i;
 const REFUND_WORD = /\bREFUND\b|\bREVERSAL\b|^CR\b/i;
 
+/** Payees that say nothing about the counterparty: FAST purpose codes and rail names. */
+const GENERIC_PAYEE = /^(other|others|othr|transfer|funds transfer|fast payment|payment|supplier payment)$/i;
+
 /** Banks book the two sides of a transfer on different days, especially over a weekend. */
 const TRANSFER_WINDOW = 3;
 const REFUND_DAYS = 30;
@@ -354,7 +357,9 @@ export function classify(input: ClassifyInput): ClassifyOutput {
 
   // 6. Partner contributions.
   for (const r of byDate) {
-    if (free(r) && partnerLike(r)) set(r, { kind: 'partner-contribution', classifiedBy: 'partner' });
+    if (!free(r) || !partnerLike(r)) continue;
+    // A purpose line ("HOUSEHOLD AUG") is worth keeping; a bare FAST code ("OTHER") is not.
+    set(r, { kind: 'partner-contribution', classifiedBy: 'partner', payee: GENERIC_PAYEE.test(payeeOf(r)) ? settings.partner.name : payeeOf(r) });
   }
 
   // 7. Your own name on the other side, with that side's statement not imported.

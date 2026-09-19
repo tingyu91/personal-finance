@@ -19,6 +19,8 @@ export interface TransactionView {
   vendor: string | null;
   note: string | null;
   needsReview: boolean;
+  /** You made a decision on this row (it can be undone). */
+  decided: boolean;
   manual: boolean;
   accountId: number | null;
   account: string | null;
@@ -30,7 +32,7 @@ export interface TransactionView {
 
 export const VIEW_SELECT = `
   SELECT t.fingerprint, t.date, t.post_date, t.payee, t.raw, t.amount_cents, t.currency, t.fx_currency, t.fx_amount_cents,
-         t.kind, t.category, t.bucket, t.vendor, t.note, t.needs_review, t.manual, t.account_id, t.cardholder,
+         t.kind, t.category, t.bucket, t.vendor, t.note, t.needs_review, t.classified_by, t.manual, t.account_id, t.cardholder,
          t.pair_fingerprint,
          a.bank, a.product, a.last4, a.label, a.currency AS acct_currency,
          ta.bank AS t_bank, ta.product AS t_product, ta.last4 AS t_last4, ta.label AS t_label,
@@ -56,6 +58,7 @@ export interface ViewRow {
   vendor: string | null;
   note: string | null;
   needs_review: number;
+  classified_by: string | null;
   manual: number;
   account_id: number | null;
   cardholder: string | null;
@@ -89,6 +92,7 @@ export function toView(r: ViewRow): TransactionView {
     vendor: r.vendor,
     note: r.note,
     needsReview: r.needs_review === 1,
+    decided: r.classified_by === 'decision',
     manual: r.manual === 1,
     accountId: r.account_id,
     account: r.bank !== null ? accountLabel({ bank: r.bank, product: r.product ?? '', last4: r.last4 ?? '', currency: r.acct_currency ?? 'SGD', label: r.label }) : null,

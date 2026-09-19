@@ -170,14 +170,14 @@ export function storeParsed(
   db: Db,
   parsed: ParsedFile,
   statements: ParsedStatement[],
-  opts: { vaultPath: string; importedAt: string; accepted?: Set<string> },
+  opts: { vaultPath: string; importedAt: string; accepted?: Set<string>; fileId?: number },
 ): Stored {
   const results = statements.map((s) => ({ s, rec: reconcile(s) }));
   const month = statements.map((s) => s.period.month).sort().at(-1)!;
   const fileId = Number(
     db
-      .prepare('INSERT INTO files (sha256, original_name, vault_path, adapter_id, adapter_version, month, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(parsed.sha, parsed.name, opts.vaultPath, parsed.adapter.id, parsed.adapter.version, month, opts.importedAt).lastInsertRowid,
+      .prepare('INSERT INTO files (id, sha256, original_name, vault_path, adapter_id, adapter_version, month, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(opts.fileId ?? null, parsed.sha, parsed.name, opts.vaultPath, parsed.adapter.id, parsed.adapter.version, month, opts.importedAt).lastInsertRowid,
   );
   const insertRow = db.prepare(
     `INSERT INTO transactions
