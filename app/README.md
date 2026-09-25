@@ -39,6 +39,24 @@ npm run rebuild                          # re-read every PDF in the vault; your 
 npm run review -- 2026-08                # write outputs/reviews/review-2026-08.md
 ```
 
+### Start with Windows
+
+```
+npm run service:install      # build, then install and start the "tally" Windows service
+npm run service:uninstall    # stop and remove it; your data is untouched
+```
+
+The service serves the built UI at http://127.0.0.1:5317, starts shortly after Windows does, and
+restarts if it stops. Installing asks for admin rights once, then for your Windows sign-in
+(`.\yourname` and its password; your Microsoft account password if you sign in with one, not a
+PIN). It runs as you rather than SYSTEM, because the data folder is usually in OneDrive. Windows
+keeps the password; these scripts never store it.
+
+The wrapper is [WinSW](https://github.com/winsw/winsw) v2.12.0, downloaded into `service/bin/`
+and checked against its SHA-256. Logs go to `service/logs/`. After pulling new code, run
+`npm run service:install` again to rebuild and restart. Stop the service before `npm run dev`,
+because both use port 5317 (`Stop-Service tally`, then `Start-Service tally` after).
+
 ## What it does
 
 - **Import:** DBS/POSB consolidated and savings statements, UOB One Account and UOB credit cards.

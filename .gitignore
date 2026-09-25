@@ -22,3 +22,7 @@ dist/
 coverage/
 *.log
 .env*
+
+# The Windows service wrapper (downloaded) and its logs
+/app/service/bin/
+/app/service/logs/

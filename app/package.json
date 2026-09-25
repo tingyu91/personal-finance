@@ -17,7 +17,9 @@
     "typecheck": "tsc --noEmit",
     "import": "tsx src/cli/import.ts",
     "rebuild": "tsx src/cli/rebuild.ts",
-    "review": "tsx src/cli/review.ts"
+    "review": "tsx src/cli/review.ts",
+    "service:install": "powershell -NoProfile -ExecutionPolicy Bypass -File service/install.ps1",
+    "service:uninstall": "powershell -NoProfile -ExecutionPolicy Bypass -File service/uninstall.ps1"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
