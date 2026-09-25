@@ -7,7 +7,7 @@
 # manager only; nothing here stores it. Re-run this script after pulling new code to rebuild and
 # restart. The wrapper is WinSW (github.com/winsw/winsw), pinned to v2.12.0 by its SHA-256.
 
-param([switch]$Elevated)
+param([switch]$Elevated, [string]$UserSid)
 $ErrorActionPreference = 'Stop'
 
 $App = Split-Path -Parent $PSScriptRoot
@@ -18,6 +18,28 @@ $Xml = Join-Path $Bin 'tally-service.xml'
 $WinswUrl = 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe'
 $WinswSha256 = '05B82D46AD331CC16BDC00DE5C6332C1EF818DF8CEEFCD49C726553209B3A0DA'
 $Url = 'http://127.0.0.1:5317/'
+
+# A service can only run as an account holding "Log on as a service" (SeServiceLogonRight).
+# WinSW offers to grant it at its prompt; this makes sure, whatever the answer was.
+function Grant-ServiceLogon([string]$Sid) {
+  $dir = Join-Path $env:TEMP "tally-secedit-$PID"
+  New-Item -ItemType Directory -Force $dir | Out-Null
+  try {
+    $cfg = Join-Path $dir 'current.inf'
+    secedit /export /cfg $cfg /areas USER_RIGHTS | Out-Null
+    $line = Get-Content $cfg | Where-Object { $_ -match '^SeServiceLogonRight\s*=' }
+    if ($line -and ($line -split '[=,]' | ForEach-Object { $_.Trim() }) -contains "*$Sid") { return }
+    $holders = if ($line) { "$($line.Split('=', 2)[1].Trim()),*$Sid" } else { "*$Sid" }
+    $inf = Join-Path $dir 'grant.inf'
+    @('[Unicode]', 'Unicode=yes', '[Version]', 'signature="$CHICAGO$"', 'Revision=1', '[Privilege Rights]', "SeServiceLogonRight = $holders") |
+      Set-Content -Encoding Unicode $inf
+    secedit /configure /db (Join-Path $dir 'grant.sdb') /cfg $inf /areas USER_RIGHTS | Out-Null
+    if ($LASTEXITCODE) { throw 'Could not give your account the "Log on as a service" right.' }
+    Write-Host 'Gave your account the "Log on as a service" right.'
+  } finally {
+    Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+  }
+}
 
 function Test-Admin {
   ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -65,15 +87,19 @@ if (-not $Elevated) {
 </service>
 "@ | Set-Content -Encoding UTF8 $Xml
 
+  # The account the service runs as: you, even if an admin elevates the install.
+  $UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
   if (-not (Test-Admin)) {
     Write-Host 'Windows will ask for admin rights to install the service.'
-    $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Elevated')
+    $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Elevated', '-UserSid', $UserSid)
     if ($p.ExitCode) { throw "The install did not finish (exit code $($p.ExitCode))." }
   }
 }
 
 if (Test-Admin) {
   try {
+    if (-not $UserSid) { $UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
+    Grant-ServiceLogon $UserSid
     if (Get-Service tally -ErrorAction SilentlyContinue) {
       Write-Host 'Replacing the Tally service already installed...'
       & $Exe stop | Out-Null
