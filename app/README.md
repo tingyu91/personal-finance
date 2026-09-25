@@ -39,23 +39,21 @@ npm run rebuild                          # re-read every PDF in the vault; your 
 npm run review -- 2026-08                # write outputs/reviews/review-2026-08.md
 ```
 
-### Start with Windows
+### Start when you sign in
 
 ```
-npm run service:install      # build, then install and start the "tally" Windows service
-npm run service:uninstall    # stop and remove it; your data is untouched
+npm run service:install      # build, then start Tally now and each time you sign in
+npm run service:uninstall    # stop it and stop it starting; your data is untouched
 ```
 
-The service serves the built UI at http://127.0.0.1:5317, starts shortly after Windows does, and
-restarts if it stops. Installing asks for admin rights once, then for your Windows sign-in
-(`.\yourname` and its password; your Microsoft account password if you sign in with one, not a
-PIN). It runs as you rather than SYSTEM, because the data folder is usually in OneDrive. Windows
-keeps the password; these scripts never store it.
-
-The wrapper is [WinSW](https://github.com/winsw/winsw) v2.12.0, downloaded into `service/bin/`
-and checked against its SHA-256. Logs go to `service/logs/`. After pulling new code, run
-`npm run service:install` again to rebuild and restart. Stop the service before `npm run dev`,
-because both use port 5317 (`Stop-Service tally`, then `Start-Service tally` after).
+This registers a scheduled task called "Tally" that runs as you, with no window, whenever you sign
+in to Windows, and serves the built UI at http://127.0.0.1:5317. It needs no admin rights and no
+password. It is not a Windows service: a service has to log on with a stored password, and a
+Microsoft account that signs in with a PIN or Windows Hello often has none Windows can check, so
+the service fails with "the user name or password is incorrect". Output goes to
+`service/logs/tally.log`. After pulling new code, run `npm run service:install` again to rebuild
+and restart. It uses port 5317, like `npm run dev`, so stop it first (`Stop-ScheduledTask Tally`)
+and start it again afterwards (`Start-ScheduledTask Tally`).
 
 ## What it does
 

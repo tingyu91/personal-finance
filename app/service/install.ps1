@@ -1,131 +1,55 @@
-# Installs Tally as a Windows service that starts with Windows and serves http://127.0.0.1:5317.
+# Starts Tally automatically when you sign in to Windows, serving http://127.0.0.1:5317.
 #
-#   npm run service:install      (asks for admin once, then for your Windows password)
+#   npm run service:install
 #
-# The service runs as your own Windows account, not SYSTEM: the database, vault and settings sit
-# in your OneDrive folder, which SYSTEM cannot reliably read. Your password goes to Windows' service
-# manager only; nothing here stores it. Re-run this script after pulling new code to rebuild and
-# restart. The wrapper is WinSW (github.com/winsw/winsw), pinned to v2.12.0 by its SHA-256.
+# A scheduled task, not a Windows service: a service must log on with a stored password, and a
+# Microsoft account that signs in with a PIN or Windows Hello often has none Windows can check.
+# The task runs as you, only while you are signed in (the only time Tally is used), with no
+# window, no password and no admin rights. Re-run this after pulling new code to rebuild and
+# restart.
 
-param([switch]$Elevated, [string]$UserSid)
 $ErrorActionPreference = 'Stop'
-
 $App = Split-Path -Parent $PSScriptRoot
-$Bin = Join-Path $PSScriptRoot 'bin'
 $Logs = Join-Path $PSScriptRoot 'logs'
-$Exe = Join-Path $Bin 'tally-service.exe'
-$Xml = Join-Path $Bin 'tally-service.xml'
-$WinswUrl = 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe'
-$WinswSha256 = '05B82D46AD331CC16BDC00DE5C6332C1EF818DF8CEEFCD49C726553209B3A0DA'
+$TaskName = 'Tally'
 $Url = 'http://127.0.0.1:5317/'
 
-# A service can only run as an account holding "Log on as a service" (SeServiceLogonRight).
-# WinSW offers to grant it at its prompt; this makes sure, whatever the answer was.
-function Grant-ServiceLogon([string]$Sid) {
-  $dir = Join-Path $env:TEMP "tally-secedit-$PID"
-  New-Item -ItemType Directory -Force $dir | Out-Null
-  try {
-    $cfg = Join-Path $dir 'current.inf'
-    secedit /export /cfg $cfg /areas USER_RIGHTS | Out-Null
-    $line = Get-Content $cfg | Where-Object { $_ -match '^SeServiceLogonRight\s*=' }
-    if ($line -and ($line -split '[=,]' | ForEach-Object { $_.Trim() }) -contains "*$Sid") { return }
-    $holders = if ($line) { "$($line.Split('=', 2)[1].Trim()),*$Sid" } else { "*$Sid" }
-    $inf = Join-Path $dir 'grant.inf'
-    @('[Unicode]', 'Unicode=yes', '[Version]', 'signature="$CHICAGO$"', 'Revision=1', '[Privilege Rights]', "SeServiceLogonRight = $holders") |
-      Set-Content -Encoding Unicode $inf
-    secedit /configure /db (Join-Path $dir 'grant.sdb') /cfg $inf /areas USER_RIGHTS | Out-Null
-    if ($LASTEXITCODE) { throw 'Could not give your account the "Log on as a service" right.' }
-    Write-Host 'Gave your account the "Log on as a service" right.'
-  } finally {
-    Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
-  }
+# An earlier version installed a Windows service called "tally". Remove it (needs admin once).
+if (Get-Service tally -ErrorAction SilentlyContinue) {
+  Write-Host 'Removing the old Tally Windows service; Windows will ask for admin rights.'
+  $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 'Stop-Service tally -ErrorAction SilentlyContinue; sc.exe delete tally | Out-Null')
+  if (Get-Service tally -ErrorAction SilentlyContinue) { Write-Host 'The old service is still there. Remove it later with: sc.exe delete tally (as admin).' -ForegroundColor Yellow }
 }
+Remove-Item -Recurse -Force (Join-Path $PSScriptRoot 'bin') -ErrorAction SilentlyContinue
 
-function Test-Admin {
-  ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
+# Stop a running copy so the new build takes over port 5317.
+if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName $TaskName }
+Get-NetTCPConnection -LocalPort 5317 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 
-if (-not $Elevated) {
-  # Build as you, not as admin, so dist/ stays yours.
-  Write-Host 'Building Tally...'
-  Push-Location $App
-  try { npm run build; if ($LASTEXITCODE) { throw 'The build failed; the service was not installed.' } } finally { Pop-Location }
+Write-Host 'Building Tally...'
+Push-Location $App
+try { npm run build; if ($LASTEXITCODE) { throw 'The build failed; nothing was changed.' } } finally { Pop-Location }
+if (-not (Test-Path (Join-Path $App 'node_modules\tsx'))) { throw "tsx is missing. Run npm install in $App first." }
 
-  New-Item -ItemType Directory -Force $Bin, $Logs | Out-Null
-  if (-not (Test-Path $Exe) -or (Get-FileHash $Exe -Algorithm SHA256).Hash -ne $WinswSha256) {
-    Write-Host 'Downloading the service wrapper (WinSW v2.12.0)...'
-    Invoke-WebRequest -UseBasicParsing -Uri $WinswUrl -OutFile $Exe
-    if ((Get-FileHash $Exe -Algorithm SHA256).Hash -ne $WinswSha256) {
-      Remove-Item $Exe
-      throw 'The downloaded WinSW does not match its expected checksum, so it was deleted.'
-    }
-  }
+New-Item -ItemType Directory -Force $Logs | Out-Null
+$node = (Get-Command node).Source
+# conhost --headless runs the console app with no window; cmd only redirects its output to the log.
+$run = "`"$node`" --import tsx src\server\main.ts --static >> `"$Logs\tally.log`" 2>&1"
+$action = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless cmd.exe /d /c $run" -WorkingDirectory $App
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
+  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
+$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName $TaskName -Description "Tally: your statements, locally, at $Url (127.0.0.1 only)." `
+  -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+Start-ScheduledTask -TaskName $TaskName
 
-  $node = (Get-Command node).Source
-  $tsx = Join-Path $App 'node_modules\tsx\dist\loader.mjs'
-  if (-not (Test-Path $tsx)) { throw "tsx is missing. Run npm install in $App first." }
-  $esc = { param($s) [Security.SecurityElement]::Escape($s) }
-  @"
-<service>
-  <id>tally</id>
-  <name>Tally (personal finance)</name>
-  <description>Tally reads your bank statements locally and serves $Url. Listens on 127.0.0.1 only.</description>
-  <executable>$(& $esc $node)</executable>
-  <arguments>--import tsx src/server/main.ts --static</arguments>
-  <workingdirectory>$(& $esc $App)</workingdirectory>
-  <startmode>Automatic</startmode>
-  <delayedAutoStart>true</delayedAutoStart>
-  <onfailure action="restart" delay="10 sec"/>
-  <onfailure action="restart" delay="60 sec"/>
-  <resetfailure>1 hour</resetfailure>
-  <stoptimeout>15 sec</stoptimeout>
-  <logpath>$(& $esc $Logs)</logpath>
-  <log mode="roll-by-size">
-    <sizeThreshold>1024</sizeThreshold>
-    <keepFiles>3</keepFiles>
-  </log>
-</service>
-"@ | Set-Content -Encoding UTF8 $Xml
-
-  # The account the service runs as: you, even if an admin elevates the install.
-  $UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-  if (-not (Test-Admin)) {
-    Write-Host 'Windows will ask for admin rights to install the service.'
-    $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Elevated', '-UserSid', $UserSid)
-    if ($p.ExitCode) { throw "The install did not finish (exit code $($p.ExitCode))." }
-  }
-}
-
-if (Test-Admin) {
-  try {
-    if (-not $UserSid) { $UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
-    Grant-ServiceLogon $UserSid
-    if (Get-Service tally -ErrorAction SilentlyContinue) {
-      Write-Host 'Replacing the Tally service already installed...'
-      & $Exe stop | Out-Null
-      & $Exe uninstall | Out-Null
-      Start-Sleep -Seconds 2
-    }
-    Write-Host ''
-    Write-Host "Enter your Windows sign-in, as .\$env:USERNAME, and its password (your Microsoft account password"
-    Write-Host 'if you sign in with one, not your PIN). Answer y to allow it to log on as a service.'
-    & $Exe install /p
-    if ($LASTEXITCODE) { throw 'Windows did not accept the service. Check the account name and password, then run it again.' }
-    & $Exe start
-    if ($LASTEXITCODE) { throw "The service is installed but did not start. See $Logs." }
-  } catch {
-    Write-Host $_ -ForegroundColor Red
-    if ($Elevated) { Read-Host 'Press Enter to close' }
-    exit 1
-  }
-  # In the separate admin window: done. The first window checks Tally answers.
-  if ($Elevated) { exit 0 }
-}
-
-# Back in your own window: wait for Tally to answer.
 for ($i = 0; $i -lt 30; $i++) {
-  try { Invoke-WebRequest -UseBasicParsing "${Url}api/health" -TimeoutSec 2 | Out-Null; Write-Host "Tally is running at $Url and starts with Windows."; exit 0 }
-  catch { Start-Sleep -Seconds 2 }
+  try {
+    Invoke-WebRequest -UseBasicParsing "${Url}api/health" -TimeoutSec 2 | Out-Null
+    Write-Host "Tally is running at $Url and starts each time you sign in."
+    exit 0
+  } catch { Start-Sleep -Seconds 2 }
 }
-Write-Host "The service is installed but $Url did not answer within a minute. See $Logs." -ForegroundColor Yellow
+Write-Host "The task is set up but $Url did not answer within a minute. See $Logs\tally.log." -ForegroundColor Yellow
 exit 1
