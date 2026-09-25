@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Paths } from './config';
+import { ConfigError } from './core/errors';
 
 /**
  * data/rules/benchmarks.json (PRD §4.8, §7.5): every outside rate, cap and threshold, each with
@@ -43,6 +44,7 @@ export interface Benchmarks {
     bonusActWorthCentsPerYear: number;
     budgetWatchRatio: number;
     duplicateSeriesCount: number;
+    duplicateSeriesWindowDays: number;
   };
 }
 
@@ -84,26 +86,26 @@ export function loadBenchmarks(paths: Paths): Benchmarks {
   try {
     raw = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
-    throw new Error(`Could not read ${file}: ${(e as Error).message}`);
+    throw new ConfigError(`Could not read ${file}: ${(e as Error).message}`);
   }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`${file}: the file must hold one JSON object.`);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new ConfigError(`${file}: the file must hold one JSON object.`);
   const out = { ...defaults } as Record<string, unknown>;
   for (const [k, v] of Object.entries(defaults)) {
     const mine = (raw as Record<string, unknown>)[k];
     if (mine === undefined) continue;
-    if (!mine || typeof mine !== 'object' || Array.isArray(mine)) throw new Error(`${file}: ${k} must be an object.`);
+    if (!mine || typeof mine !== 'object' || Array.isArray(mine)) throw new ConfigError(`${file}: ${k} must be an object.`);
     const section = mine as Record<string, unknown>;
-    if (typeof section.checked_on !== 'string' || !DATE.test(section.checked_on)) throw new Error(`${file}: ${k}.checked_on must be a date, like 2026-09-19.`);
+    if (typeof section.checked_on !== 'string' || !DATE.test(section.checked_on)) throw new ConfigError(`${file}: ${k}.checked_on must be a date, like 2026-09-19.`);
     const merged: Record<string, unknown> = k === 'thresholds' ? { ...(v as object), ...section } : { ...section };
     for (const [field, dv] of Object.entries(v as object)) {
-      if (!(field in merged)) throw new Error(`${file}: ${k}.${field} is missing. Give it with the date you checked it.`);
-      if (!sameShape(dv, merged[field])) throw new Error(`${file}: ${k}.${field} must be ${Array.isArray(dv) ? 'a list' : `a ${typeof dv}`}.`);
+      if (!(field in merged)) throw new ConfigError(`${file}: ${k}.${field} is missing. Give it with the date you checked it.`);
+      if (!sameShape(dv, merged[field])) throw new ConfigError(`${file}: ${k}.${field} must be ${Array.isArray(dv) ? 'a list' : `a ${typeof dv}`}.`);
     }
     for (const listKey of ['salaryTiers', 'giroTiers']) {
       const list = merged[listKey];
       if (list === undefined) continue;
       const ok = Array.isArray(list) && list.every((t) => t && typeof t === 'object' && typeof t.ratePct === 'number' && (t.uptoCents === null || typeof t.uptoCents === 'number'));
-      if (!ok) throw new Error(`${file}: ${k}.${listKey} must be a list of { "uptoCents": number or null, "ratePct": number }.`);
+      if (!ok) throw new ConfigError(`${file}: ${k}.${listKey} must be a list of { "uptoCents": number or null, "ratePct": number }.`);
     }
     out[k] = merged;
   }

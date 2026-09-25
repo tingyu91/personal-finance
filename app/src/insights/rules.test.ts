@@ -58,6 +58,7 @@ describe('1. unseen money', () => {
     });
     const [i] = unseenMoney(s);
     expect(i).toMatchObject({ rule: 1, level: 'act', title: 'S$1,220.00 went to cards and wallets Tally cannot see into' });
+    expect(i!.detail).toContain('About S$610.00 a month over 2 months.');
     expect(i!.detail).toContain('Card ·5566 S$1,200.00, DBS PayLah S$20.00');
     expect(i!.fingerprints.sort()).toEqual([repay.fingerprint, topup.fingerprint].sort());
   });
@@ -66,6 +67,19 @@ describe('1. unseen money', () => {
     const s = snap({ coverage: { months: ['2026-08'], rows: [{ account: 'DBS PayLah', accountId: null, seenOnly: true, cells: ['missing'], unseenCents: [30_00] }] } });
     expect(unseenMoney(s)[0]!.level).toBe('watch');
     expect(unseenMoney(snap())).toEqual([]);
+  });
+
+  it('averages over every month with statements, so one large repayment does not read as a monthly habit', () => {
+    const cells = ['missing', 'missing', 'missing', 'missing', 'missing', 'missing', 'missing'];
+    const s = snap({
+      coverage: {
+        months: ['2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08'],
+        rows: [{ account: 'Card ·5566', accountId: 7, seenOnly: true, cells, unseenCents: [0, 0, 0, 2_100_00, 0, 0, 0] }],
+      },
+    });
+    const [i] = unseenMoney(s);
+    expect(i!.level).toBe('watch');
+    expect(i!.detail).toContain('About S$300.00 a month over 7 months.');
   });
 });
 
@@ -82,6 +96,8 @@ describe('2. UOB One bonus interest', () => {
     balances: [],
   });
 
+  const salary = (date: string) => row({ accountId: 2, date, raw: 'Inward CR - GIRO · SALA Salary Payment', amountCents: 5_000_00, kind: 'income' });
+
   it('works out tiered interest a year', () => {
     const tiers = defaultBenchmarks().uobOne.salaryTiers;
     expect(tieredInterestCents(150_000_00, tiers)).toBe(2_850_00);
@@ -90,30 +106,37 @@ describe('2. UOB One bonus interest', () => {
 
   it('averages end-of-day balances over the period', () => {
     expect(averageBalance({ ...statement('2026-06', 0, 100_00), balances: [{ date: '2026-06-16', cents: 400_00 }] })).toBe(250_00);
+    // A part period: ten days at S$100, then five at S$400.
+    expect(averageBalance({ ...statement('2026-06', 0, 100_00), periodEnd: '2026-06-15', balances: [{ date: '2026-06-11', cents: 400_00 }] })).toBe(200_00);
   });
 
   it('says so when eligible spend was below the minimum and no bonus came, with the worth at your balance', () => {
-    const salary = (date: string) => row({ accountId: 2, date, raw: 'Inward CR - GIRO · SALA Salary Payment', amountCents: 5_000_00, kind: 'income' });
     const s = snap({
       accounts: [one],
       rows: [salary('2026-07-25'), salary('2026-08-25')],
       statements: [statement('2026-07', 120_00, 150_000_00), statement('2026-08', 310_00, 150_000_00)],
     });
     const [i] = uobOneBonus(s);
-    expect(i).toMatchObject({ rule: 2, level: 'act', title: 'UOB One Account ·5555 paid no bonus interest in 2 of 2 months', checkedOn: '2026-09-19' });
-    expect(i!.detail).toContain('Eligible card spend was S$120.00 to S$310.00 a month, below the S$500.00 UOB lists, with a salary credit present');
+    expect(i).toMatchObject({ rule: 2, level: 'act', title: 'UOB One Account ·5555 paid no bonus interest in 2 of 2 months with a salary credit', checkedOn: '2026-09-19' });
+    expect(i!.detail).toContain('Eligible card spend was S$120.00 to S$310.00 a month, below the S$500.00 UOB lists.');
     expect(i!.detail).toContain('Checked 2026-09-19.');
     expect(i!.worthCents).toBe(2_850_00 - 75_00);
   });
 
-  it('says when a month without a salary credit is valued on the GIRO route', () => {
-    const [i] = uobOneBonus(snap({ accounts: [one], statements: [statement('2026-08', 100_00, 150_000_00)] }));
-    expect(i!.detail).toContain("(months without a salary credit assume UOB's other route, 3 GIRO debits)");
-    expect(i!.detail).not.toContain('salary credit present');
+  it('is quiet for months without a salary credit, and counts only the months with one', () => {
+    expect(uobOneBonus(snap({ accounts: [one], statements: [statement('2026-08', 100_00, 150_000_00)] }))).toEqual([]);
+    const s = snap({ accounts: [one], rows: [salary('2026-08-25')], statements: [statement('2026-07', 100_00, 150_000_00), statement('2026-08', 100_00, 150_000_00)] });
+    expect(uobOneBonus(s)[0]!.title).toBe('UOB One Account ·5555 paid no bonus interest in 1 of 1 months with a salary credit');
+  });
+
+  it('looks for the salary in the month UOB printed the spend for', () => {
+    const lagged = { ...statement('2026-08', 100_00, 150_000_00), meta: { creditCardEligibleSpendCents: 100_00, eligibleSpendMonth: '2026-07' } };
+    expect(uobOneBonus(snap({ accounts: [one], rows: [salary('2026-07-25')], statements: [lagged] }))).toHaveLength(1);
+    expect(uobOneBonus(snap({ accounts: [one], rows: [salary('2026-08-25')], statements: [lagged] }))).toEqual([]);
   });
 
   it('turns Watch when the UOB figures were checked over 180 days ago', () => {
-    const s = snap({ today: '2027-06-01', accounts: [one], statements: [statement('2026-08', 100_00, 150_000_00)] });
+    const s = snap({ today: '2027-06-01', accounts: [one], rows: [salary('2026-08-25')], statements: [statement('2026-08', 100_00, 150_000_00)] });
     const [i] = uobOneBonus(s);
     expect(i!.level).toBe('watch');
     expect(i!.detail).toContain('over six months ago');
@@ -122,7 +145,7 @@ describe('2. UOB One bonus interest', () => {
   it('is quiet when the spend was met or a bonus was paid', () => {
     const met = { ...statement('2026-08', 600_00, 50_000_00) };
     const paid = { ...statement('2026-07', 100_00, 50_000_00), meta: { creditCardEligibleSpendCents: 100_00, bonusInterestCents: 12_00 } };
-    expect(uobOneBonus(snap({ accounts: [one], statements: [met, paid] }))).toEqual([]);
+    expect(uobOneBonus(snap({ accounts: [one], rows: [salary('2026-07-25'), salary('2026-08-25')], statements: [met, paid] }))).toEqual([]);
   });
 });
 
@@ -140,6 +163,12 @@ describe('3. possible duplicates', () => {
     const rows = ['2026-05-02', '2026-05-09', '2026-05-16'].map((date) => row({ payee: 'Weekly Helper', amountCents: -150_00, date, kind: 'unclassified' }));
     expect(duplicates(snap({ rows }))).toEqual([]);
     expect(duplicates(snap({ rows: rows.slice(0, 2) }))).toHaveLength(1);
+  });
+
+  it('still flags a pair when the only other identical payment was months earlier', () => {
+    const rows = ['2026-01-10', '2026-05-02', '2026-05-10'].map((date) => row({ payee: 'Example Aircon', amountCents: -180_00, date, kind: 'spend' }));
+    const [i] = duplicates(snap({ rows }));
+    expect(i!.fingerprints.sort()).toEqual([rows[1]!.fingerprint, rows[2]!.fingerprint].sort());
   });
 
   it('ignores small amounts, other payees, and pairs more than 14 days apart', () => {
@@ -182,6 +211,11 @@ describe('5. subscriptions', () => {
     expect(i!.detail).not.toContain('Gym');
     expect(i!.detail).not.toContain('IRAS');
   });
+
+  it('is quiet about a charge that stopped', () => {
+    const rows = ['03', '04', '05', '06'].map((m) => row({ payee: 'Streamly', amountCents: -15_98, date: `2026-${m}-05` }));
+    expect(subscriptions(snap({ rows }))).toEqual([]);
+  });
 });
 
 describe('6. spending spike', () => {
@@ -195,6 +229,19 @@ describe('6. spending spike', () => {
     const out = spendingSpike(snap({ rows }));
     expect(out.map((i) => i.title)).toEqual(['Transport was S$180.00 in August 2026, 1.8 times the usual']);
     expect(out[0]!.action!.href).toBe('#/transactions?month=2026-08&category=Transport');
+    expect(out[0]!.detail).not.toContain('may be low');
+  });
+
+  const transport = () => [...['05', '06', '07'].map((m) => row({ category: 'Transport', amountCents: -100_00, date: `2026-${m}-10` })), row({ category: 'Transport', amountCents: -180_00, date: '2026-08-10' })];
+
+  it('is quiet with fewer than three months before', () => {
+    expect(spendingSpike(snap({ months: ['2026-06', '2026-07', '2026-08'], rows: transport() }))).toEqual([]);
+  });
+
+  it('says both figures may be low when a month is missing statements or has unseen money', () => {
+    const coverage = { months: ['2026-07', '2026-08'], rows: [{ account: 'Card ·5566', accountId: 7, seenOnly: true, cells: ['missing' as const, 'missing' as const], unseenCents: [0, 0] }] };
+    const [i] = spendingSpike(snap({ rows: transport(), coverage }));
+    expect(i!.detail).toContain('Some of these months have statements missing or money Tally cannot see, so both figures may be low.');
   });
 });
 
@@ -214,6 +261,7 @@ describe('8. tax-year moves', () => {
   it('is quiet before October, Info in October, and Act in November and December', () => {
     expect(taxYear(snap())).toEqual([]);
     expect(taxYear(snap({ today: '2026-10-05' }))[0]!.level).toBe('info');
+    expect(taxYear(snap({ today: '2026-10-05', months: [] }))).toEqual([]);
     const [i] = taxYear(snap({ today: '2026-11-20', rows: [row({ raw: 'SRS CONTRIBUTION', amountCents: -5_000_00, date: '2026-03-01' })] }));
     expect(i).toMatchObject({ rule: 8, level: 'act', title: 'Tax relief for 2026 closes on 31 December' });
     expect(i!.detail).toContain('(S$5,000.00 seen this year)');
@@ -253,6 +301,12 @@ describe('10. stale data', () => {
     );
     expect(out.map((i) => i.title)).toEqual(['Nothing imported for 49 days', 'DBS Savings Account ·9876 has no statement for July 2026']);
     expect(staleData(snap())).toEqual([]);
+  });
+
+  it('keeps a gap’s key as later months go missing too, so dismissing it sticks', () => {
+    const gap = (cells: ('ok' | 'missing')[], months: string[]) =>
+      staleData(snap({ coverage: { months, rows: [{ account: 'DBS Savings Account ·9876', accountId: 1, seenOnly: false, cells, unseenCents: months.map(() => 0) }] } }))[0]!.key;
+    expect(gap(['ok', 'missing'], ['2026-07', '2026-08'])).toBe(gap(['ok', 'missing', 'missing'], ['2026-07', '2026-08', '2026-09']));
   });
 });
 

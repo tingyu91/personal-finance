@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Paths } from './config';
+import { ConfigError } from './core/errors';
 
 /**
  * data/rules/settings.json (PRD §7.1): name aliases, the idle-cash buffer, the marginal tax
@@ -44,16 +45,16 @@ function missingKeys(base: unknown, over: unknown): boolean {
 }
 
 function textList(v: unknown, key: string, file: string): string[] {
-  if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw new Error(`${file}: ${key} must be a list of text values, like ["ALEX TAN"].`);
+  if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw new ConfigError(`${file}: ${key} must be a list of text values, like ["ALEX TAN"].`);
   // A blank alias would match every row.
   return (v as string[]).map((x) => x.trim()).filter(Boolean);
 }
 
 function check(m: Settings, file: string): Settings {
-  if (typeof m.partner.name !== 'string' || !m.partner.name.trim()) throw new Error(`${file}: partner.name must be a name.`);
-  if (typeof m.idleCashMonths !== 'number' || !(m.idleCashMonths > 0)) throw new Error(`${file}: idleCashMonths must be a number above 0.`);
+  if (typeof m.partner.name !== 'string' || !m.partner.name.trim()) throw new ConfigError(`${file}: partner.name must be a name.`);
+  if (typeof m.idleCashMonths !== 'number' || !(m.idleCashMonths > 0)) throw new ConfigError(`${file}: idleCashMonths must be a number above 0.`);
   if (m.marginalTaxRate !== null && (typeof m.marginalTaxRate !== 'number' || m.marginalTaxRate < 0 || m.marginalTaxRate > 1)) {
-    throw new Error(`${file}: marginalTaxRate must be null or a number from 0 to 1 (0.115 for 11.5%).`);
+    throw new ConfigError(`${file}: marginalTaxRate must be null or a number from 0 to 1 (0.115 for 11.5%).`);
   }
   return {
     self: { aliases: textList(m.self.aliases, 'self.aliases', file) },
@@ -79,14 +80,14 @@ export function loadSettings(paths: Paths): Settings {
     try {
       raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     } catch (e) {
-      throw new Error(`Could not read ${file}: ${(e as Error).message}`);
+      throw new ConfigError(`Could not read ${file}: ${(e as Error).message}`);
     }
   }
   const isObject = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
-  if (!isObject(raw)) throw new Error(`${file}: the file must hold one JSON object, like {"self": {"aliases": []}}.`);
+  if (!isObject(raw)) throw new ConfigError(`${file}: the file must hold one JSON object, like {"self": {"aliases": []}}.`);
   for (const k of ['self', 'partner'] as const) {
     const v = (raw as Record<string, unknown>)[k];
-    if (v !== undefined && !isObject(v)) throw new Error(`${file}: ${k} must be an object, like {"aliases": []}.`);
+    if (v !== undefined && !isObject(v)) throw new ConfigError(`${file}: ${k} must be an object, like {"aliases": []}.`);
   }
   const merged = merge(DEFAULT_SETTINGS, raw);
   const settings = check(merged, file);

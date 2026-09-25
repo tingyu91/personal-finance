@@ -46,7 +46,7 @@ export function monthlyReview(db: Db, paths: Paths, month: string, today = sgtDa
   out(`| Everyday spending (tax and fees included) | ${formatSGD(o.spentCents)} |`);
   out(`| Home project | ${formatSGD(o.homeProjectCents)} |`);
   out(`| Income | ${formatSGD(o.incomeCents)} |`);
-  out(`| Net savings | ${o.netCents < 0 ? '−' : ''}${formatSGD(o.netCents)} |`);
+  out(`| Net savings | ${formatSGD(o.netCents)} |`);
   out(`| Savings rate | ${o.savingsRate === null ? 'no income' : `${Math.round(o.savingsRate * 100)}%`} |`);
   out(`| Moved to investments | ${formatSGD(o.investedCents)} |`);
   out(`| From ${settings.partner.name} into the joint account (not income) | ${formatSGD(o.partnerCents)} |`);
@@ -69,7 +69,10 @@ export function monthlyReview(db: Db, paths: Paths, month: string, today = sgtDa
   for (const b of home.buckets) out(`- ${b.bucket ?? 'needs a bucket'}: ${formatSGD(b.cents)} (${b.count})`);
   if (home.unseen.cents) out(`- About ${formatSGD(home.unseen.cents)} more may be missing: it went to cards and wallets with no statements here.`);
   out();
-  out('## Insights');
+  // Insights look across every statement, not only this month, so say when they were worked out.
+  out(`## Insights on ${today}`);
+  out();
+  out('Across all the statements imported so far, not only this month. Dismissed and snoozed insights are left out.');
   out();
   if (!insights.length) out('Nothing to flag.');
   for (const i of insights) {

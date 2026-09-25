@@ -30,6 +30,7 @@ export function InsightCard({ item, onChanged, compact = false }: { item: Insigh
     }
   };
   const rowsHref = item.fingerprints.length ? href('transactions', { insight: item.key }) : null;
+  const rowsWord = item.fingerprints.length === 1 ? 'row' : `${item.fingerprints.length} rows`;
   return (
     <Insight
       level={item.level}
@@ -39,17 +40,17 @@ export function InsightCard({ item, onChanged, compact = false }: { item: Insigh
       worthLabel={item.worthLabel}
       per={item.per}
       action={item.action?.label}
-      onAction={item.action ? () => (window.location.hash = item.action!.href.replace(/^#/, '')) : undefined}
+      actionHref={item.action?.href}
     >
       <div className="insight-controls">
         {rowsHref && item.action?.href !== rowsHref ? (
-          <a className="ty-link" href={rowsHref}>
-            See the {item.fingerprints.length === 1 ? 'row' : `${item.fingerprints.length} rows`}
+          <a className="ty-link" href={rowsHref} aria-label={`See the ${rowsWord}: ${item.title}`}>
+            See the {rowsWord}
           </a>
         ) : null}
         {compact ? null : (
           <>
-            <button type="button" className="ty-link quiet-link" disabled={busy} onClick={() => void hide(30)} aria-label={`Snooze for 30 days: ${item.title}`}>
+            <button type="button" className="ty-link quiet-link" disabled={busy} onClick={() => void hide(30)} aria-label={`Snooze 30 days: ${item.title}`}>
               Snooze 30 days
             </button>
             <button type="button" className="ty-link quiet-link" disabled={busy} onClick={() => void hide()} aria-label={`Dismiss: ${item.title}`}>
@@ -101,14 +102,41 @@ export function Insights() {
     );
   }
   if (!res.data) return <Page title="Insights" />;
-  const { insights, hidden } = res.data;
+  const { insights, hidden, coverage } = res.data;
+
+  const restore = async () => {
+    setNote(null);
+    try {
+      await api.restoreInsights();
+      changed();
+    } catch (e) {
+      setNote({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    }
+  };
 
   return (
     <Page title="Insights" actions={actions}>
       {note ? (
-        <p className={`notice ${note.ok ? 'notice-watch' : 'notice-critical'}`} role="status">
+        <p className={`notice ${note.ok ? 'notice-watch' : 'notice-critical'}`} role={note.ok ? 'status' : 'alert'}>
           {note.text}
         </p>
+      ) : null}
+      {insights.length && coverage.incomplete.length ? (
+        <section className="notice notice-watch banner" aria-label="Coverage">
+          <span className="ty-pill ty-pill-watch">Not complete</span>
+          <div className="banner-body">
+            <p>
+              {coverage.incomplete.length === coverage.months.length ? 'Every month' : `${coverage.incomplete.length} of ${coverage.months.length} months`} here{' '}
+              {coverage.incomplete.length === 1 || coverage.incomplete.length === coverage.months.length ? 'has' : 'have'} a statement missing or money sent to cards and wallets Tally cannot see, so the totals below are
+              probably low.
+            </p>
+            <p>
+              <a className="ty-link" href={href('statements')}>
+                See what is missing on Statements
+              </a>
+            </p>
+          </div>
+        </section>
       ) : null}
       {!insights.length ? (
         <Empty heading="Nothing to flag right now">
@@ -136,14 +164,7 @@ export function Insights() {
       {hidden ? (
         <p className="ty-note">
           {hidden} {hidden === 1 ? 'insight is' : 'insights are'} dismissed or snoozed.{' '}
-          <button
-            type="button"
-            className="ty-link"
-            onClick={async () => {
-              await api.restoreInsights();
-              changed();
-            }}
-          >
+          <button type="button" className="ty-link" onClick={() => void restore()}>
             Bring {hidden === 1 ? 'it' : 'them'} back
           </button>
         </p>

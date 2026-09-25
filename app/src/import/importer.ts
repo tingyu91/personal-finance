@@ -338,15 +338,21 @@ export async function importFiles(db: Db, paths: Paths, files: ImportFile[], dep
       items.push({ name: redact(path.basename(f.name)), status: 'error', detail: `Could not import this file: ${(e as Error).message}` });
     }
   }
-  let summary = summarise(items);
-  if (items.some((i) => i.status === 'imported' || i.status === 'failed')) {
-    try {
-      classifyAll(db, loadSettings(paths));
-    } catch (e) {
-      summary += ` Sorting the new rows failed: ${(e as Error).message}`;
-    }
+  return { items, summary: summarise(items) + sortAfterImport(db, paths, items) };
+}
+
+/**
+ * After a run of imports, re-classifies every row once if anything new arrived. Returns text to
+ * add to the summary: empty, or why sorting failed. The drop zone and the CLI both use it.
+ */
+export function sortAfterImport(db: Db, paths: Paths, items: ReceiptItem[]): string {
+  if (!items.some((i) => i.status === 'imported' || i.status === 'failed')) return '';
+  try {
+    classifyAll(db, loadSettings(paths));
+    return '';
+  } catch (e) {
+    return ` Sorting the new rows failed: ${(e as Error).message}`;
   }
-  return { items, summary };
 }
 
 /** Every *.pdf under the given folders, recursively, sorted. Missing folders are skipped. */

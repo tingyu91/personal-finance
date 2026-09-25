@@ -177,6 +177,49 @@ One page did not load, so its tiers come from a review site quoting it (growbean
 8 Sep 2026); the file says so. Check the UOB figures on uob.com.sg before relying on rule 2's
 estimate.
 
+### Block 5 review (2026-09-19, after the build)
+
+An independent review ran once the spend limit cleared. There were no critical findings. Fixed:
+
+- **`npm run import` did not sort the rows.** The CLI imports one file at a time (so it can ask for
+  a password) and never ran the classifier afterwards. Every row stayed unsorted until something
+  else re-classified, so coverage, unseen money and the duplicate check were all wrong after a CLI
+  import. The drop zone and "Scan inbox" were not affected. Both paths now share `sortAfterImport`.
+- **Rule 2 follows PRD §7.5 exactly:** only months with a salary credit count, and the salary is
+  looked for in the month UOB printed the eligible spend for (often the month before the
+  statement). It no longer values months without a salary credit on the GIRO tiers. On the
+  sample it fires at Act on 6 of 6 such months; the first statement's spend is for a month with no
+  statement here.
+- **Rule 1's "a month" figure** is averaged over every month with statements, not only the months
+  with unseen money, so one large repayment no longer reads as a monthly habit.
+- **Coverage first on Insights (CLAUDE.md rule 9).** The Insights screen carries the coverage
+  banner when any month has a statement missing or unseen money. A spending spike says when its
+  months are incomplete.
+- **A broken `settings.json` or `benchmarks.json`** now names the file and what to fix on every
+  screen, instead of a bare error 500.
+- The monthly review printed a negative net savings figure with two minus signs, and now prints
+  one. Its insights section says the date the insights were worked out and that they cover all
+  statements.
+- **Rule 3's series check** looks within 45 days of the pair (`duplicateSeriesWindowDays`). One
+  identical payment months earlier no longer hides a real duplicate.
+- **Rule 8** is quiet with no statements in the year.
+- **Rule 10:** a gap is keyed by the month it starts, so dismissing a closed account's gap sticks.
+- **Accessibility:**
+  - Insight titles are h3 under the group's h2.
+  - An action that goes somewhere is a link.
+  - "Snooze 30 days" and "See the N rows" carry the insight's title in their accessible names.
+  - Errors on the screen use `role="alert"`.
+  - "Bring them back" says so when it fails.
+- New tests: a dismissal survives "Rebuild from vault", quiet paths for subscriptions and spikes, a
+  part-period average balance, and the broken-benchmarks and negative-net cases.
+
+Left as they are, on purpose:
+
+- **Rule 4 also counts unsorted rows whose text names a fee** (an annual fee, a TT charge), so a fee
+  is flagged before you sort it.
+- **Restore brings back every dismissed insight at once,** and the dismiss key travels in the request
+  body rather than the path, because keys can hold payee names. Both differ from the Block 5 plan.
+
 ## Block 6 — Missing card adapters (ongoing)
 
 Nothing to build yet: no statements for the cards Tally only sees as repayment targets have been

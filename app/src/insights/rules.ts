@@ -1,7 +1,7 @@
 import type { Benchmarks, Tier } from '../benchmarks';
 import { ageInDays } from '../benchmarks';
 import type { Settings } from '../settings';
-import { addMonths, daysBetween } from '../core/dates';
+import { addDays, addMonths, daysBetween } from '../core/dates';
 import { formatSGD } from '../core/money';
 
 /**
@@ -83,7 +83,7 @@ export interface Snapshot {
 const SPENDING = new Set(['spend', 'fee', 'tax']);
 
 /** "S$60,000": whole dollars, for titles only. */
-function roundSGD(cents: number): string {
+export function roundSGD(cents: number): string {
   return `S$${Math.round(Math.abs(cents) / 100).toLocaleString('en-SG')}`;
 }
 const txHref = (params: Record<string, string>) => `#/transactions?${new URLSearchParams(params).toString()}`;
@@ -101,6 +101,14 @@ function monthName(month: string): string {
   return `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m - 1]} ${y}`;
 }
 
+/**
+ * Months with a statement missing or money sent to cards and wallets Tally cannot see (coverage
+ * first, CLAUDE.md rule 9). Totals that reach into these months are probably low.
+ */
+export function incompleteMonths(s: Snapshot): string[] {
+  return s.coverage.months.filter((_, i) => s.coverage.rows.some((r) => r.cells[i] === 'missing' || (r.unseenCents[i] ?? 0) > 0));
+}
+
 /** "checked 2026-09-19", and Watch when the check is too old (PRD §7.5). */
 function dated(level: Level, checkedOn: string, s: Snapshot): { level: Level; note: string } {
   const old = ageInDays(checkedOn, s.today) > s.benchmarks.thresholds.outsideFactsStaleDays;
@@ -113,7 +121,8 @@ export function unseenMoney(s: Snapshot): InsightItem[] {
   const seen = s.coverage.rows.filter((r) => r.seenOnly && r.unseenCents.some((c) => c > 0));
   if (!seen.length) return [];
   const total = seen.reduce((t, r) => t + r.unseenCents.reduce((a, b) => a + b, 0), 0);
-  const months = s.coverage.months.filter((_, i) => seen.some((r) => r.unseenCents[i]! > 0)).length || 1;
+  // Averaged over every month with statements, not only the months with unseen money.
+  const months = s.coverage.months.length || 1;
   const perMonth = Math.round(total / months);
   const accountIds = new Set(seen.map((r) => r.accountId).filter((x): x is number => x !== null));
   const fingerprints = s.rows
@@ -130,7 +139,7 @@ export function unseenMoney(s: Snapshot): InsightItem[] {
       rule: 1,
       level: perMonth >= s.benchmarks.thresholds.unseenActCentsPerMonth ? 'act' : 'watch',
       title: `${formatSGD(total)} went to cards and wallets Tally cannot see into`,
-      detail: `About ${formatSGD(perMonth)} a month. ${list}. Add their statements to see what it bought.`,
+      detail: `About ${formatSGD(perMonth)} a month over ${months} ${months === 1 ? 'month' : 'months'}. ${list}. Add their statements to see what it bought.`,
       fingerprints,
       action: { label: 'See where to get the statements', href: '#/statements' },
     },
@@ -175,33 +184,36 @@ export function uobOneBonus(s: Snapshot): InsightItem[] {
   const one = s.accounts.filter((a) => a.bank === 'UOB' && /One Account/i.test(a.product));
   const out: InsightItem[] = [];
   for (const acct of one) {
-    const sts = s.statements.filter((st) => st.accountId === acct.id).sort((a, c) => a.month.localeCompare(c.month));
-    const missed = sts
+    const salaryIn = (month: string) =>
+      s.rows.some((r) => r.accountId === acct.id && r.date.startsWith(month) && /\bSALA\b/i.test(r.raw) && r.amountCents >= b.minSalaryCents);
+    // PRD §7.5 row 2: only months where UOB printed the eligible card spend while a salary credit
+    // was present. The printed spend can be for the month before the statement's, so the salary
+    // is looked for in the month the spend was for.
+    const judged = s.statements
+      .filter((st) => st.accountId === acct.id && 'creditCardEligibleSpendCents' in st.meta)
+      .sort((a, c) => a.month.localeCompare(c.month))
       .map((st) => {
+        const spendMonth = typeof st.meta.eligibleSpendMonth === 'string' ? st.meta.eligibleSpendMonth : st.month;
         const spend = Number(st.meta.creditCardEligibleSpendCents ?? 0) + Number(st.meta.debitCardEligibleSpendCents ?? 0);
-        const bonus = Number(st.meta.bonusInterestCents ?? 0);
-        const salary = s.rows.some(
-          (r) => r.accountId === acct.id && r.date.startsWith(st.month) && /\bSALA\b/i.test(r.raw) && r.amountCents >= b.minSalaryCents,
-        );
         const avg = averageBalance(st);
-        const potential = tieredInterestCents(avg, salary ? b.salaryTiers : b.giroTiers) - Math.round((avg * b.baseRatePct) / 100);
-        return { st, spend, bonus, salary, avg, monthlyWorth: Math.round(potential / 12) };
+        const potential = tieredInterestCents(avg, b.salaryTiers) - Math.round((avg * b.baseRatePct) / 100);
+        return { st, spend, bonus: Number(st.meta.bonusInterestCents ?? 0), salary: salaryIn(spendMonth), monthlyWorth: Math.round(potential / 12) };
       })
-      .filter((m) => m.bonus === 0 && m.spend < b.minCardSpendCents && 'creditCardEligibleSpendCents' in m.st.meta);
+      .filter((m) => m.salary);
+    const missed = judged.filter((m) => m.bonus === 0 && m.spend < b.minCardSpendCents);
     if (!missed.length) continue;
     const worth = Math.round((missed.reduce((t, m) => t + m.monthlyWorth, 0) / missed.length) * 12);
-    const spends = missed.map((m) => m.spend);
+    const lo = Math.min(...missed.map((m) => m.spend));
+    const hi = Math.max(...missed.map((m) => m.spend));
     const d = dated(worth >= s.benchmarks.thresholds.bonusActWorthCentsPerYear ? 'act' : 'watch', b.checked_on, s);
     out.push({
       key: `uob-one:${acct.id}:${missed.at(-1)!.st.month}`,
       rule: 2,
       level: d.level,
-      title: `${acct.label} paid no bonus interest in ${missed.length} of ${sts.length} months`,
+      title: `${acct.label} paid no bonus interest in ${missed.length} of ${judged.length} months with a salary credit`,
       detail:
-        `Eligible card spend was ${formatSGD(Math.min(...spends))} to ${formatSGD(Math.max(...spends))} a month, below the ${formatSGD(b.minCardSpendCents)} UOB lists` +
-        `${missed.every((m) => m.salary) ? ', with a salary credit present' : missed.some((m) => m.salary) ? ', with a salary credit in some of those months' : ''}. ` +
-        `At your average balance the bonus would be worth about ${formatSGD(worth)} a year` +
-        `${missed.some((m) => !m.salary) ? ` (months without a salary credit assume UOB's other route, ${b.giroDebitsInstead} GIRO debits)` : ''}. ${d.note}`,
+        `Eligible card spend was ${lo === hi ? formatSGD(lo) : `${formatSGD(lo)} to ${formatSGD(hi)}`} a month, below the ${formatSGD(b.minCardSpendCents)} UOB lists. ` +
+        `At your average balance the bonus would be worth about ${formatSGD(worth)} a year. ${d.note}`,
       worthCents: worth,
       fingerprints: s.rows.filter((r) => r.accountId === acct.id && /\bSALA\b/i.test(r.raw)).map((r) => r.fingerprint),
       action: { label: 'See the account’s rows', href: txHref({ account: String(acct.id) }) },
@@ -217,13 +229,19 @@ export function duplicates(s: Snapshot): InsightItem[] {
   const t = s.benchmarks.thresholds;
   const out: InsightItem[] = [];
   // A payee paid the same amount again and again (a cleaner, a monthly transfer) is a series,
-  // not a duplicate. Refunded payments are kind "refund", so they never show here.
-  const seen = new Map<string, number>();
+  // not a duplicate: duplicateSeriesCount or more such payments within duplicateSeriesWindowDays
+  // of the pair. One identical payment months earlier does not hide a real duplicate.
+  // Refunded payments are kind "refund", so they never show here.
   const sig = (r: SnapRow) => `${r.payee.toLowerCase()}|${r.amountCents}`;
-  for (const r of s.rows) if (r.amountCents < 0) seen.set(sig(r), (seen.get(sig(r)) ?? 0) + 1);
+  const datesOf = new Map<string, string[]>();
+  for (const r of s.rows) if (r.amountCents < 0) datesOf.set(sig(r), [...(datesOf.get(sig(r)) ?? []), r.date]);
+  const isSeries = (a: SnapRow, c: SnapRow) => {
+    const from = addDays(a.date, -t.duplicateSeriesWindowDays);
+    const to = addDays(c.date, t.duplicateSeriesWindowDays);
+    return (datesOf.get(sig(a)) ?? []).filter((d) => d >= from && d <= to).length >= t.duplicateSeriesCount;
+  };
   const candidates = s.rows
     .filter((r) => r.amountCents <= -t.duplicateMinCents && (SPENDING.has(r.kind) || r.kind === 'unclassified'))
-    .filter((r) => (seen.get(sig(r)) ?? 0) < t.duplicateSeriesCount)
     .sort((a, b) => a.date.localeCompare(b.date));
   const used = new Set<string>();
   for (let i = 0; i < candidates.length; i++) {
@@ -233,6 +251,7 @@ export function duplicates(s: Snapshot): InsightItem[] {
       const c = candidates[j]!;
       if (daysBetween(a.date, c.date) > t.duplicateDays) break;
       if (used.has(c.fingerprint) || c.amountCents !== a.amountCents || c.payee.toLowerCase() !== a.payee.toLowerCase()) continue;
+      if (isSeries(a, c)) break;
       used.add(a.fingerprint).add(c.fingerprint);
       const key = `dup:${[a.fingerprint, c.fingerprint].sort().join('|')}`;
       out.push({
@@ -354,6 +373,7 @@ export function spendingSpike(s: Snapshot): InsightItem[] {
       .filter((r) => r.kind === 'spend' && r.category === cat && !r.bucket && r.date.startsWith(m))
       .reduce((a, r) => a - r.amountCents, 0);
   const cats = [...new Set(s.rows.filter((r) => r.kind === 'spend' && r.category && r.category !== 'Home project').map((r) => r.category!))];
+  const gaps = new Set(incompleteMonths(s));
   const out: InsightItem[] = [];
   for (const cat of cats) {
     const history = [1, 2, 3, 4, 5, 6].map((k) => addMonths(month, -k)).filter((m) => s.months.includes(m));
@@ -367,7 +387,9 @@ export function spendingSpike(s: Snapshot): InsightItem[] {
       rule: 6,
       level: 'watch',
       title: `${cat} was ${formatSGD(now)} in ${monthName(month)}, ${(now / med).toFixed(1)} times the usual`,
-      detail: `The median of the ${history.length} months before was ${formatSGD(med)}.`,
+      detail:
+        `The median of the ${history.length} months before was ${formatSGD(med)}.` +
+        ([month, ...history].some((m) => gaps.has(m)) ? ' Some of these months have statements missing or money Tally cannot see, so both figures may be low.' : ''),
       fingerprints: s.rows.filter((r) => r.kind === 'spend' && r.category === cat && !r.bucket && r.date.startsWith(month)).map((r) => r.fingerprint),
       action: { label: `See ${cat} in ${monthName(month)}`, href: txHref({ month, category: cat }) },
     });
@@ -410,7 +432,7 @@ export function idleCash(s: Snapshot): InsightItem[] {
 
 export function taxYear(s: Snapshot): InsightItem[] {
   const [y, m] = s.today.split('-').map(Number) as [number, number];
-  if (m < 10) return [];
+  if (m < 10 || !s.months.some((x) => x.startsWith(String(y)))) return [];
   const { srs, cpfTopUp } = s.benchmarks;
   const srsPaid = s.rows.filter((r) => r.date.startsWith(String(y)) && /\bSRS\b/i.test(r.raw) && r.amountCents < 0).reduce((t, r) => t - r.amountCents, 0);
   const cpfPaid = s.rows.filter((r) => r.date.startsWith(String(y)) && /CPF.*(TOP.?UP|RSTU)|RSTU/i.test(r.raw) && r.amountCents < 0).reduce((t, r) => t - r.amountCents, 0);
@@ -509,7 +531,8 @@ export function staleData(s: Snapshot): InsightItem[] {
     const missing = s.coverage.months.filter((_, i) => i > first && r.cells[i] === 'missing');
     if (!missing.length) continue;
     out.push({
-      key: `stale-gap:${r.account}:${missing.join(',')}`,
+      // Keyed by where the gap starts, so dismissing a closed account's gap sticks as months pass.
+      key: `stale-gap:${r.account}:${missing[0]}`,
       rule: 10,
       level: 'watch',
       title: `${r.account} has no statement for ${missing.length === 1 ? monthName(missing[0]!) : `${missing.length} months`}`,
