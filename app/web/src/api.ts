@@ -1,13 +1,14 @@
 import type { OverviewData } from '../../src/reports/overview';
 import type { HomeData } from '../../src/reports/home';
 import type { InsightItem } from '../../src/insights/rules';
+import type { InsightList } from '../../src/insights';
 import type { CoverageRow } from '../../src/reports/coverage';
 import type { Ledger } from '../../src/reports/ledger';
 import type { FileView } from '../../src/reports/statements';
 import type { TransactionView } from '../../src/queries/transactions';
 import type { ReceiptItem } from './ds';
 
-export type { OverviewData, CoverageRow, Ledger, FileView, TransactionView, HomeData, InsightItem };
+export type { OverviewData, CoverageRow, Ledger, FileView, TransactionView, HomeData, InsightItem, InsightList };
 
 export interface VendorInput {
   name?: string;
@@ -135,7 +136,7 @@ export const api = {
   addVendor: (v: VendorInput) => call<{ id: number }>('/api/home/vendors', json('POST', v)),
   updateVendor: (id: number, v: VendorInput) => call<{ ok: true }>(`/api/home/vendors/${id}`, json('PATCH', v)),
   deleteVendor: (id: number) => call<{ ok: true }>(`/api/home/vendors/${id}`, { method: 'DELETE' }),
-  insights: () => call<{ insights: InsightItem[]; hidden: number }>('/api/insights'),
+  insights: () => call<InsightList>('/api/insights'),
   dismissInsight: (key: string, days?: number) => call<{ ok: true }>('/api/insights/dismiss', json('POST', { key, days })),
   restoreInsights: () => call<{ restored: number }>('/api/insights/restore', { method: 'POST' }),
   writeReview: (month: string) => call<{ file: string }>(`/api/review/${month}`, { method: 'POST' }),

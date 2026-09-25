@@ -72,7 +72,7 @@
 .ty-insight { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-4); padding: var(--space-4); border-top: 1px solid var(--line); }
 .ty-insight:first-child { border-top: 0; }
 .ty-insight-head { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
-.ty-insight h4 { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; }
+.ty-insight h3 { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; }
 .ty-insight p { margin: 0; color: var(--ink-muted); max-width: 64ch; }
 .ty-insight-worth { text-align: right; display: grid; align-content: start; gap: 2px; }
 @media (max-width: 560px) { .ty-insight { grid-template-columns: 1fr; } .ty-insight-worth { text-align: left; } }

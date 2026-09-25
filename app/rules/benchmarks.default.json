@@ -45,6 +45,7 @@
     "bonusActWorthCentsPerYear": 10000,
     "budgetWatchRatio": 0.8,
     "duplicateSeriesCount": 3,
+    "duplicateSeriesWindowDays": 45,
     "checked_on": "2026-09-19",
     "source": "PRD §7.5 and Tally defaults"
   }

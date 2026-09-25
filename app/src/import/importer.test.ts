@@ -6,7 +6,7 @@ import { openDb, type Db } from '../db/open';
 import { findIdentifiers } from '../core/redact';
 import { PdfPasswordError } from '../pdf/extract';
 import type { PdfDoc } from '../adapters/types';
-import { findPdfs, importFiles, importPdf, scanDatabase, vaultRelPath, type ImportDeps } from './importer';
+import { findPdfs, importFiles, importPdf, scanDatabase, sortAfterImport, vaultRelPath, type ImportDeps } from './importer';
 import { dbsConsolidated } from '../../test/fixtures/synthetic/dbs-consolidated';
 import { dbsSavings } from '../../test/fixtures/synthetic/dbs-savings';
 import { uobCard } from '../../test/fixtures/synthetic/uob-card';
@@ -185,6 +185,17 @@ describe('importFiles', () => {
     const res = await importFiles(db, paths, [file('savings'), file('savings'), file('unknown'), file('unbalanced', 'b.pdf')], deps);
     expect(res.items.map((i) => i.status)).toEqual(['imported', 'duplicate', 'unrecognised', 'conflict']);
     expect(res.summary).toBe('1 statement imported. 1 already here. 1 not recognised. 1 clashes with a statement already here.');
+  });
+
+  it('sorts the rows after one file at a time, as the CLI imports, not only after a batch', async () => {
+    const items = [];
+    for (const k of ['consolidated', 'savings', 'cards', 'one']) items.push(await importPdf(db, paths, file(k), deps));
+    expect(count("SELECT COUNT(*) n FROM transactions WHERE kind IS NOT NULL AND kind != 'unclassified'")).toBe(0);
+    expect(sortAfterImport(db, paths, items)).toBe('');
+    expect(count("SELECT COUNT(*) n FROM transactions WHERE kind = 'card-repayment'")).toBeGreaterThan(0);
+    expect(count('SELECT COUNT(*) n FROM accounts WHERE seen_only_as_target = 1')).toBeGreaterThan(0);
+    // Nothing new: nothing to sort.
+    expect(sortAfterImport(db, paths, [{ name: 'x.pdf', status: 'duplicate', detail: '' }])).toBe('');
   });
 
   it('counts a statement that does not reconcile in the summary', async () => {

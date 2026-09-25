@@ -7,6 +7,7 @@ import { findPdfs, importFiles, type ImportDeps, type ImportFile } from '../impo
 import { rebuildFromVault } from '../import/rebuild';
 import { clearDecision, DecisionError, deleteRule, listRules, listSeedRules, setDecision, setDecisions, type DecisionPatch } from '../decisions';
 import { getTransaction } from '../queries/transactions';
+import { ConfigError } from '../core/errors';
 import { registerScreenRoutes } from './screens';
 import { registerHomeRoutes } from './home';
 import { registerInsightRoutes } from './insights';
@@ -156,6 +157,12 @@ export function createApp(ctx: AppContext): Hono {
   registerInsightRoutes(api, ctx.paths, db, serial);
 
   api.all('*', (c) => c.json({ error: 'Not found' }, 404));
+  // A broken settings.json or benchmarks.json names the file and what to fix, on every screen.
+  api.onError((e, c) => {
+    if (e instanceof ConfigError) return c.json({ error: e.message }, 500);
+    console.error(e);
+    return c.json({ error: 'Tally hit an error it did not expect. The server window has the details.' }, 500);
+  });
   app.route('/api', api);
   return app;
 }

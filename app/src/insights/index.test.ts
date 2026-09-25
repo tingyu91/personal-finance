@@ -4,6 +4,9 @@ import path from 'node:path';
 import type { Paths } from '../config';
 import { openDb, type Db } from '../db/open';
 import { importFiles, type ImportDeps } from '../import/importer';
+import { rebuildFromVault } from '../import/rebuild';
+import { addManualEntry } from '../manual';
+import { overview } from '../reports/overview';
 import type { PdfDoc } from '../adapters/types';
 import { createApp } from '../server/app';
 import { monthlyReview, writeMonthlyReview } from '../review';
@@ -70,6 +73,35 @@ describe('listInsights', () => {
     expect(listInsights(db, paths, TODAY).hidden).toBe(0);
   });
 
+  it('keeps a dismissal through "Rebuild from vault"', async () => {
+    const key = listInsights(db, paths, TODAY).insights.find((i) => i.rule === 1)!.key;
+    dismissInsight(db, key, undefined, TODAY);
+    await rebuildFromVault(db, paths, deps);
+    const after = listInsights(db, paths, TODAY);
+    expect(after.insights.some((i) => i.key === key)).toBe(false);
+    expect(after.hidden).toBe(1);
+  });
+
+  it('says which months are incomplete, for the coverage banner', () => {
+    const { coverage } = listInsights(db, paths, TODAY);
+    expect(coverage.months.length).toBeGreaterThan(0);
+    // The synthetic card repayments go to a card with no statement here.
+    expect(coverage.incomplete.length).toBeGreaterThan(0);
+    expect(coverage.incomplete.every((m) => coverage.months.includes(m))).toBe(true);
+  });
+
+  it('names the broken benchmarks file instead of failing blind', async () => {
+    fs.writeFileSync(path.join(paths.rulesDir, 'benchmarks.json'), '{ "uobOne": ');
+    const app = createApp({ paths, db, importDeps: deps });
+    for (const url of ['/api/insights', '/api/transactions?insight=x']) {
+      const res = await app.request(url);
+      expect(res.status).toBe(500);
+      expect(((await res.json()) as { error: string }).error).toContain('benchmarks.json');
+    }
+    const review = await app.request('/api/review/2026-08', { method: 'POST' });
+    expect(((await review.json()) as { error: string }).error).toContain('benchmarks.json');
+  });
+
   it('gives each insight’s rows to the Transactions filter', async () => {
     const unseen = listInsights(db, paths, TODAY).insights.find((i) => i.rule === 1)!;
     expect(insightFingerprints(db, paths, unseen.key, TODAY)!.fingerprints.sort()).toEqual([...unseen.fingerprints].sort());
@@ -108,6 +140,14 @@ describe('monthly review', () => {
     const f = writeMonthlyReview(db, paths, '2026-08', TODAY);
     expect(f).toBe(path.join(paths.reviewsDir, 'review-2026-08.md'));
     expect(fs.readFileSync(f, 'utf8')).toBe(md);
+  });
+
+  it('writes a negative net with one minus sign', () => {
+    addManualEntry(db, paths, { date: '2026-08-20', amountCents: -1_000_000_00, payee: 'Example Big Spend', kind: 'spend', category: 'Other' }, TODAY);
+    expect(overview(db, '2026-08').netCents).toBeLessThan(0);
+    const md = monthlyReview(db, paths, '2026-08', TODAY);
+    expect(md).toMatch(/\| Net savings \| −S\$[\d,]+\.\d{2} \|/);
+    expect(md).not.toContain('−−');
   });
 
   it('writes it from the API for a month with statements only', async () => {

@@ -32,8 +32,8 @@ describe('Insights screen', () => {
   it('links an insight to its rows and dismisses or snoozes it', async () => {
     const api = show(<Insights />);
     const info = await screen.findByRole('region', { name: /^Info/ });
-    expect(within(info).getByRole('link', { name: 'See the row' }).getAttribute('href')).toBe('#/transactions?insight=subs%3Ax');
-    fireEvent.click(within(info).getByRole('button', { name: /^Snooze for 30 days/ }));
+    expect(within(info).getByRole('link', { name: 'See the row: 2 regular monthly charges, about S$21.96 a month' }).getAttribute('href')).toBe('#/transactions?insight=subs%3Ax');
+    fireEvent.click(within(info).getByRole('button', { name: /^Snooze 30 days/ }));
     await waitFor(() => expect(api.dismissInsight).toHaveBeenCalledWith('subs:x', 30));
     fireEvent.click(within(info).getByRole('button', { name: /^Dismiss/ }));
     await waitFor(() => expect(api.dismissInsight).toHaveBeenCalledWith('subs:x', undefined));
@@ -49,10 +49,36 @@ describe('Insights screen', () => {
   });
 
   it('offers to bring back what you dismissed, and says when there is nothing', async () => {
-    const api = show(<Insights />, { insights: vi.fn(async () => ({ insights: [], hidden: 2 })) });
+    const api = show(<Insights />, { insights: vi.fn(async () => ({ insights: [], hidden: 2, coverage: { months: ['2026-08'], incomplete: ['2026-08'] } })) });
     expect(await screen.findByRole('heading', { name: 'Nothing to flag right now' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Bring them back' }));
     await waitFor(() => expect(api.restoreInsights).toHaveBeenCalled());
+    expect(screen.queryByRole('region', { name: 'Coverage' })).toBeNull();
+  });
+
+  it('says so when bringing insights back fails', async () => {
+    show(<Insights />, {
+      insights: vi.fn(async () => ({ insights: [], hidden: 1, coverage: { months: ['2026-08'], incomplete: [] } })),
+      restoreInsights: vi.fn(async () => {
+        throw new Error('Tally’s local server is not answering. Start it with npm start.');
+      }),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Bring it back' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('not answering');
+  });
+
+  it('carries the coverage banner when some months are incomplete', async () => {
+    show(<Insights />);
+    const banner = await screen.findByRole('region', { name: 'Coverage' });
+    expect(banner.textContent).toContain('1 of 2 months here has a statement missing or money sent to cards and wallets Tally cannot see');
+    expect(within(banner).getByRole('link', { name: 'See what is missing on Statements' }).getAttribute('href')).toBe('#/statements');
+  });
+
+  it('gives each insight a heading under its group, and actions that go somewhere as links', async () => {
+    show(<Insights />);
+    const act = await screen.findByRole('region', { name: /^Act/ });
+    expect(within(act).getByRole('heading', { level: 3 }).textContent).toBe('S$1,318.27 went to cards and wallets Tally cannot see into');
+    expect(within(act).getByRole('link', { name: 'See where to get the statements' }).getAttribute('href')).toBe('#/statements');
   });
 });
 
@@ -78,7 +104,7 @@ describe('insights elsewhere', () => {
       coverage: { complete: true, missing: [], partial: [], unseenCents: 0, held: [] },
     }));
     const four = [...insightItems(), { ...insightItems()[2]!, key: 'x4', title: 'A fourth one' }];
-    show(<Overview />, { overview, insights: vi.fn(async () => ({ insights: four, hidden: 0 })) });
+    show(<Overview />, { overview, insights: vi.fn(async () => ({ insights: four, hidden: 0, coverage: { months: ['2026-08'], incomplete: [] } })) });
     const top = await screen.findByRole('region', { name: 'Worth a look' });
     expect(top.querySelectorAll('.ty-insight')).toHaveLength(3);
     expect(within(top).getByRole('link', { name: 'See all 4 insights' }).getAttribute('href')).toBe('#/insights');

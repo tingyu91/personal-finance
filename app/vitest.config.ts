@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'web/**/*.test.tsx', 'test/**/*.test.ts'],
     environment: 'node',
+    setupFiles: ['test/setup.ts'],
     // Real-statement tests parse PDFs; give them room.
     testTimeout: 60_000,
     hookTimeout: 120_000,

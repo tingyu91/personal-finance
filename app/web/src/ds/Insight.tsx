@@ -19,26 +19,34 @@ export interface InsightProps {
   per?: string;
   action?: string;
   onAction?: () => void;
+  /** When the action goes somewhere, a link rather than a button. */
+  actionHref?: string;
   className?: string;
   children?: React.ReactNode;
 }
 
-export function Insight({ level, title, detail, worth, worthLabel, per, action, onAction, className, children }: InsightProps) {
+export function Insight({ level, title, detail, worth, worthLabel, per, action, onAction, actionHref, className, children }: InsightProps) {
   const [cls, word] = LEVEL[level] ?? LEVEL.info;
   return (
     <div className={cx('ty-insight', className)}>
       <div style={{ display: 'grid', gap: '4px', minWidth: 0 }}>
         <div className="ty-insight-head">
           <span className={cx('ty-pill', cls)}>{word}</span>
-          <h4>{title}</h4>
+          <h3>{title}</h3>
         </div>
         {detail ? <p>{detail}</p> : null}
         {children}
         {action ? (
           <div>
-            <button type="button" className="ty-link" onClick={onAction}>
-              {action}
-            </button>
+            {actionHref ? (
+              <a className="ty-link" href={actionHref}>
+                {action}
+              </a>
+            ) : (
+              <button type="button" className="ty-link" onClick={onAction}>
+                {action}
+              </button>
+            )}
           </div>
         ) : null}
       </div>

@@ -1,7 +1,7 @@
 import type { Paths } from '../config';
 import type { Db } from '../db/open';
 import { addDays, sgtDate } from '../core/dates';
-import { runRules, type InsightItem } from './rules';
+import { incompleteMonths, runRules, type InsightItem } from './rules';
 import { snapshot } from './snapshot';
 
 export type { InsightItem } from './rules';
@@ -10,8 +10,16 @@ export type { InsightItem } from './rules';
  * Live insights (PRD §7.4 screen 4): every rule's findings, less the ones you dismissed and the
  * ones snoozed until a later date. A dismissed finding comes back only as a new finding.
  */
-export function listInsights(db: Db, paths: Paths, today = sgtDate(new Date().toISOString())): { insights: InsightItem[]; hidden: number } {
-  const all = runRules(snapshot(db, paths, today));
+export interface InsightList {
+  insights: InsightItem[];
+  hidden: number;
+  /** The months the insights look across, and those with a statement missing or unseen money. */
+  coverage: { months: string[]; incomplete: string[] };
+}
+
+export function listInsights(db: Db, paths: Paths, today = sgtDate(new Date().toISOString())): InsightList {
+  const snap = snapshot(db, paths, today);
+  const all = runRules(snap);
   const hidden = new Map(
     (db.prepare('SELECT key, until FROM dismissed_insights').all() as { key: string; until: string | null }[]).map((d) => [d.key, d.until]),
   );
@@ -20,7 +28,7 @@ export function listInsights(db: Db, paths: Paths, today = sgtDate(new Date().to
     const until = hidden.get(i.key);
     return until !== null && until !== undefined && until <= today;
   });
-  return { insights: live, hidden: all.length - live.length };
+  return { insights: live, hidden: all.length - live.length, coverage: { months: snap.coverage.months, incomplete: incompleteMonths(snap) } };
 }
 
 /** Dismiss for good (days omitted) or snooze for a number of days. */

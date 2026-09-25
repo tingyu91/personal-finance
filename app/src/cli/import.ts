@@ -4,7 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { ensureDirs, getPaths } from '../config';
 import { openDb } from '../db/open';
-import { importPdf, summarise, type ReceiptItem } from '../import/importer';
+import { importPdf, sortAfterImport, summarise, type ReceiptItem } from '../import/importer';
 import { resolveInputs } from './args';
 
 const WORD: Record<ReceiptItem['status'], string> = {
@@ -60,8 +60,10 @@ async function main() {
     items.push(item);
     console.log(`${WORD[item.status].padEnd(18)} ${item.name}  ${item.detail}`);
   }
+  // Sort the new rows (transfers, card repayments, the rules) like the drop zone does.
+  const sorted = sortAfterImport(db, paths, items);
   db.close();
-  console.log(`\n${summarise(items)}`);
+  console.log(`\n${summarise(items)}${sorted}`);
 }
 
 main().catch((e) => {
